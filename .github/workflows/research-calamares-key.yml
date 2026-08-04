@@ -13,6 +13,16 @@ jobs:
   inspect:
     runs-on: ubuntu-24.04
     steps:
+      - name: Discover exact Calamares 3.3.14 release assets
+        run: |
+          set -Eeuo pipefail
+          curl --fail --location --silent --show-error \
+            'https://api.github.com/repos/calamares/calamares/releases/tags/v3.3.14' \
+            --output calamares-3.3.14-release.json
+          jq -r '.assets[] | [.name, .browser_download_url] | @tsv' \
+            calamares-3.3.14-release.json \
+            | tee calamares-3.3.14-assets.txt
+
       - name: Retrieve signer certificates and release artifacts
         run: |
           set -Eeuo pipefail
@@ -22,19 +32,25 @@ jobs:
           curl --fail --location --silent --show-error \
             'https://keys.openpgp.org/vks/v1/by-fingerprint/6D98B995A1CA6CE4BB906518C7AA337DFA13881E' \
             --output calamares-technical-update.asc
+          tar_url=$(jq -r '.assets[] | select(.name == "calamares-3.3.14.tar.gz") | .browser_download_url' \
+            calamares-3.3.14-release.json)
+          signature_url=$(jq -r '.assets[] | select(.name | test("^calamares-3\\.3\\.14\\.tar\\.gz\\.(sig|asc)$")) | .browser_download_url' \
+            calamares-3.3.14-release.json)
+          [[ -n $tar_url ]] || { echo 'release tarball asset not found' >&2; exit 1; }
+          [[ -n $signature_url ]] || { echo 'release signature asset not found' >&2; exit 1; }
+          printf 'tarball_url=%s\nsignature_url=%s\n' "$tar_url" "$signature_url" \
+            | tee calamares-3.3.14-selected-assets.txt
           curl --fail --location --silent --show-error \
-            'https://github.com/calamares/calamares/releases/download/v3.3.14/calamares-3.3.14.tar.gz' \
-            --output calamares-3.3.14.tar.gz
+            "$tar_url" --output calamares-3.3.14.tar.gz
           curl --fail --location --silent --show-error \
-            'https://github.com/calamares/calamares/releases/download/v3.3.14/calamares-3.3.14.tar.gz.sig' \
-            --output calamares-3.3.14.tar.gz.sig
+            "$signature_url" --output calamares-3.3.14.tar.gz.signature
           printf '%s  %s\n' \
             '5547f80db067dea923ae693ba6bb88eb2b2eeac1da3ebec42fce453e31c290c0' \
             'calamares-3.3.14.tar.gz' | sha256sum --check --strict
           sha256sum \
             calamares-identity-certificate.asc \
             calamares-technical-update.asc \
-            calamares-3.3.14.tar.gz.sig
+            calamares-3.3.14.tar.gz.signature
 
       - name: Merge and inspect exact OpenPGP identities
         run: |
@@ -58,7 +74,7 @@ jobs:
           export GNUPGHOME="$RUNNER_TEMP/gnupg"
           set +e
           gpg --batch --status-fd 1 \
-            --verify calamares-3.3.14.tar.gz.sig calamares-3.3.14.tar.gz \
+            --verify calamares-3.3.14.tar.gz.signature calamares-3.3.14.tar.gz \
             > calamares-release-signature-status.txt \
             2> calamares-release-signature-stderr.txt
           verify_status=$?
@@ -76,11 +92,14 @@ jobs:
         with:
           name: calamares-signing-key-research
           path: |
+            calamares-3.3.14-release.json
+            calamares-3.3.14-assets.txt
+            calamares-3.3.14-selected-assets.txt
             calamares-identity-certificate.asc
             calamares-technical-update.asc
             calamares-release-key-merged.asc
             calamares-release-key-identities.txt
-            calamares-3.3.14.tar.gz.sig
+            calamares-3.3.14.tar.gz.signature
             calamares-release-signature-status.txt
             calamares-release-signature-stderr.txt
             calamares-release-signature-result.txt
