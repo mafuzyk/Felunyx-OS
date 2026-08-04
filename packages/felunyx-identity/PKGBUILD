@@ -4,20 +4,16 @@ pkgrel=2
 pkgdesc='Felunyx OS identity and immutable build provenance'
 arch=('any')
 license=('GPL-3.0-or-later')
-depends=('filesystem' 'bash' 'coreutils')
-install=felunyx-identity.install
-source=('os-release' 'felunyx-apply-os-release' '90-felunyx-os-release.hook' 'felunyx-evidence' 'felunyx-evidence.service')
-sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+source=('os-release' 'felunyx-evidence' 'felunyx-evidence.service')
+sha256sums=('SKIP' 'SKIP' 'SKIP')
 
 package() {
   : "${FELUNYX_SOURCE_COMMIT:?FELUNYX_SOURCE_COMMIT is required}"
   : "${FELUNYX_ARCHIVE_DATE:?FELUNYX_ARCHIVE_DATE is required}"
   : "${SOURCE_DATE_EPOCH:?SOURCE_DATE_EPOCH is required}"
-  install -d "$pkgdir/etc" "$pkgdir/usr/lib/felunyx" "$pkgdir/usr/lib/systemd/system/multi-user.target.wants"
   install -Dm0644 "$srcdir/os-release" "$pkgdir/usr/lib/felunyx/os-release"
-  install -Dm0755 "$srcdir/felunyx-apply-os-release" "$pkgdir/usr/lib/felunyx/felunyx-apply-os-release"
-  install -Dm0644 "$srcdir/90-felunyx-os-release.hook" "$pkgdir/usr/share/libalpm/hooks/90-felunyx-os-release.hook"
-  ln -s ../usr/lib/os-release "$pkgdir/etc/os-release"
+  install -d "$pkgdir/etc" "$pkgdir/usr/lib/felunyx" "$pkgdir/usr/lib/systemd/system/multi-user.target.wants"
+  ln -s ../usr/lib/felunyx/os-release "$pkgdir/etc/os-release"
   install -Dm0755 "$srcdir/felunyx-evidence" "$pkgdir/usr/lib/felunyx/felunyx-evidence"
   install -Dm0644 "$srcdir/felunyx-evidence.service" "$pkgdir/usr/lib/systemd/system/felunyx-evidence.service"
   ln -s ../felunyx-evidence.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/felunyx-evidence.service"

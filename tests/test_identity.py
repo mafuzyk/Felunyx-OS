@@ -6,18 +6,11 @@ def test_os_release_identity():
     assert 'ID_LIKE=arch' in text
     assert 'PRETTY_NAME="Felunyx OS Phase 2"' in text
 
-def test_identity_uses_owned_template_and_atomic_application():
+def test_identity_overrides_etc_without_owning_filesystem_vendor_path():
     pkg=Path('packages/felunyx-identity/PKGBUILD').read_text()
     assert '"$pkgdir/usr/lib/os-release"' not in pkg
     assert '"$pkgdir/usr/lib/felunyx/os-release"' in pkg
-    assert 'felunyx-identity.install' in pkg
-    assert '90-felunyx-os-release.hook' in pkg
-    apply=Path('packages/felunyx-identity/felunyx-apply-os-release').read_text()
-    assert 'mktemp /usr/lib/.os-release.felunyx.' in apply
-    assert 'mv -f -- "$replacement" "$target_file"' in apply
-    hook=Path('packages/felunyx-identity/90-felunyx-os-release.hook').read_text()
-    assert 'Target = filesystem' in hook
-    assert 'When = PostTransaction' in hook
+    assert 'ln -s ../usr/lib/felunyx/os-release "$pkgdir/etc/os-release"' in pkg
 
 def test_live_policy_is_explicit_and_limited():
     sudo=Path('packages/felunyx-iso-hooks/10-felunyx-live')

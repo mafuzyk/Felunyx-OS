@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, hashlib, json, os, re, tempfile
+import argparse, hashlib, json, os, re, shutil, subprocess, tempfile
 from pathlib import Path
 REQUIRED_PACKAGES={"linux-zen","linux-lts","linux-firmware","amd-ucode","intel-ucode","btrfs-progs","grub","efibootmgr","networkmanager","plasma-meta","plasma-wayland-protocols","sddm","dolphin","konsole","calamares","felunyx-identity","felunyx-iso-hooks","felunyx-calamares-config"}
+PACKAGE_OWNERSHIP_PAIRS=(
+    ("filesystem","felunyx-identity"),
+    ("calamares","felunyx-calamares-config"),
+    ("grub","felunyx-calamares-config"),
+)
 
 def atomic(path:Path,data:dict):
     path.parent.mkdir(parents=True,exist_ok=True); fd,tmp=tempfile.mkstemp(prefix='.'+path.name+'.',dir=path.parent)
@@ -33,9 +38,29 @@ def check_profile(p:Path):
     add('no-private-keys',not private,','.join(private))
     return checks
 
+def package_paths(pacman:str,config:Path,package:str):
+    result=subprocess.run([pacman,'--config',str(config),'-Flq',package],check=False,capture_output=True,text=True)
+    if result.returncode:
+        detail=result.stderr.strip() or result.stdout.strip() or f'pacman exited {result.returncode}'
+        raise RuntimeError(f'{package}: {detail}')
+    return {path for raw in result.stdout.splitlines() if (path:=raw.strip().lstrip('/')) and not path.endswith('/')}
+
+def check_package_ownership(p:Path):
+    config=p/'pacman.conf'; pacman=shutil.which('pacman')
+    if not pacman or not config.exists() or '@FELUNYX_REPO_URI@' in config.read_text(): return []
+    checks=[]; cache={}
+    try:
+        for owner,custom in PACKAGE_OWNERSHIP_PAIRS:
+            for package in (owner,custom): cache.setdefault(package,package_paths(pacman,config,package))
+            overlaps=sorted(cache[owner]&cache[custom])
+            checks.append({"name":f'package-overlap:{owner}:{custom}',"status":"fail" if overlaps else "pass","detail":','.join(overlaps)})
+    except RuntimeError as error:
+        checks.append({"name":"package-ownership-query","status":"fail","detail":str(error)})
+    return checks
+
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--profile',type=Path,required=True); ap.add_argument('--iso',type=Path); ap.add_argument('--report',type=Path,required=True); ns=ap.parse_args()
-    checks=check_profile(ns.profile)
+    checks=check_profile(ns.profile)+check_package_ownership(ns.profile)
     if ns.iso:
         ok=ns.iso.is_file(); checks.append({"name":"iso-present","status":"pass" if ok else "fail","detail":str(ns.iso)})
         if ok: checks.append({"name":"iso-sha256","status":"pass","detail":hashlib.sha256(ns.iso.read_bytes()).hexdigest()})
