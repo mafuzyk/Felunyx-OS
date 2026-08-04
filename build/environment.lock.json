@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "base_image": "docker.io/archlinux/archlinux:base-devel-20260726.0.562248@sha256:cc47e23460a9172cc7bae82d655edfe7828b0e0bf3b337f512385e0f76ce0a42",
+  "archiso": "89-1",
+  "default_archive_date": "2026/07/27",
+  "calamares": {
+    "version": "3.3.14",
+    "source_sha256": "5547f80db067dea923ae693ba6bb88eb2b2eeac1da3ebec42fce453e31c290c0",
+    "signing_fingerprint": "6D98B995A1CA6CE4BB906518C7AA337DFA13881E"
+  },
+  "packages": [
+    "archiso=89-1",
+    "archlinux-keyring",
+    "edk2-ovmf",
+    "git",
+    "jq",
+    "libisoburn",
+    "python",
+    "python-pytest",
+    "qemu-desktop",
+    "shellcheck"
+  ]
+}
