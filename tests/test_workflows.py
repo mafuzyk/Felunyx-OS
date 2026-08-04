@@ -17,3 +17,9 @@ def test_privileged_build_rejects_fork_prs_and_uses_no_write_permission():
 
 def test_artifacts_exclude_workdirs_and_caches():
     upload=workflow('build-iso.yml').split('Upload compact build evidence',1)[1]; assert 'work' not in upload.lower(); assert 'cache' not in upload.lower()
+
+def test_build_failure_preserves_full_container_log_and_exit_status():
+    text=workflow('build-iso.yml')
+    assert 'tee artifacts/workflow-build.log' in text
+    assert 'build_status=${PIPESTATUS[0]}' in text
+    assert 'exit "$build_status"' in text

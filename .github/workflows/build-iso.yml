@@ -63,12 +63,17 @@ jobs:
           mkdir -p artifacts
           args=(--mode "$REQUESTED_MODE" --output /workspace/artifacts)
           if [[ $REQUESTED_MODE == frozen ]]; then args+=(--archive-date "$REQUESTED_DATE"); fi
+          set +e
           docker run --rm --privileged \
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --workdir /workspace \
             --env SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" \
             "$BUILDER_IMAGE" \
-            "tools/felunyx-build ${args[*]}"
+            "tools/felunyx-build ${args[*]}" \
+            2>&1 | tee artifacts/workflow-build.log
+          build_status=${PIPESTATUS[0]}
+          set -e
+          exit "$build_status"
       - name: Upload compact build evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
