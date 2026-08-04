@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 
@@ -33,6 +34,10 @@ def test_environment_lock_pins_the_vendored_release_certificate_and_provenance()
         "technical_update_source": "https://keys.openpgp.org/vks/v1/by-fingerprint/6D98B995A1CA6CE4BB906518C7AA337DFA13881E",
         "technical_update_sha256": "86a20967e356756e7f19bdd24ef5d3b01a17e12c32d58400f9329ce004bc3cdf",
     }
+
+    certificate = Path(calamares["release_certificate_path"])
+    assert certificate.is_file()
+    assert hashlib.sha256(certificate.read_bytes()).hexdigest() == MERGED_CERTIFICATE_SHA256
 
 
 def test_build_imports_only_the_hash_checked_vendored_certificate():
