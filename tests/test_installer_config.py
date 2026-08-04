@@ -48,10 +48,11 @@ def test_live_package_removed_and_grub_schema_is_real():
 def test_calamares_presets_are_local_makepkg_sources():
     package=Path('packages/felunyx-calamares-config')
     p=(package/'PKGBUILD').read_text()
+    source_line=next(line for line in p.splitlines() if line.startswith('source=('))
     for preset in ('linux-zen.preset','linux-lts.preset'):
         assert (package/preset).is_file()
-        assert f"'{preset}'" in p
-        assert f'preinstall_copy/etc/mkinitcpio.d/{preset}' not in p
+        assert f"'{preset}'" in source_line
+        assert f'preinstall_copy/etc/mkinitcpio.d/{preset}' not in source_line
         assert f'"$srcdir/{preset}"' in p
 
 def test_calamares_source_is_fixed_and_signed():
