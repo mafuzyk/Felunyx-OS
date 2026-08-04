@@ -108,7 +108,12 @@ for pkg in calamares felunyx-identity felunyx-iso-hooks felunyx-calamares-config
 exec > >(tee "$work/build.log") 2>&1; mkarchiso -v -w "$work/archiso" -o "$out" "$profile"
 iso=$(find "$out" -maxdepth 1 -type f -name '*.iso' -print -quit); [[ -n $iso ]] || felunyx_die 'mkarchiso completed without an ISO artifact'
 cp "$iso" "$stage/Felunyx-OS-phase2-${commit:0:12}-x86_64.iso"; cp "$work/build.log" "$stage/build.log"
-if manifest=$(find "$out" -maxdepth 1 -type f -name '*pkglist*.txt' -print -quit); then cp "$manifest" "$stage/packages.txt"; else cp "$profile/packages.x86_64" "$stage/packages.txt"; fi
+manifest=$(find "$out" -maxdepth 1 -type f -name '*pkglist*.txt' -print -quit)
+if [[ -n $manifest ]]; then
+  cp "$manifest" "$stage/packages.txt"
+else
+  cp "$profile/packages.x86_64" "$stage/packages.txt"
+fi
 python3 - "$stage/build-info.json" "$mode" "$archive_date" "$commit" "$epoch" <<'PY'
 import json,sys
 with open(sys.argv[1],'w') as f: json.dump({"schema":1,"phase":2,"mode":sys.argv[2],"archive_date":sys.argv[3],"commit":sys.argv[4],"source_date_epoch":int(sys.argv[5]),"archiso":"89-1"},f,indent=2,sort_keys=True); f.write('\n')
