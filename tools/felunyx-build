@@ -38,24 +38,25 @@ for cmd in mkarchiso makepkg repo-add runuser pacman python3 sha256sum gpg curl;
 builder=felunyx-builder; if ! id "$builder" >/dev/null 2>&1; then useradd --create-home --shell /bin/bash "$builder"; fi
 install -d -o "$builder" -g "$builder" "$work/pkgwork" "$repo"; printf '%s ALL=(ALL) NOPASSWD: /usr/bin/pacman\n' "$builder" > /etc/sudoers.d/felunyx-builder; chmod 0440 /etc/sudoers.d/felunyx-builder
 build_package(){ local name=$1 src="$ROOT/packages/$1" dst="$work/pkgwork/$1"; cp -a "$src" "$dst"; chown -R "$builder:$builder" "$dst"; runuser -u "$builder" -- env SOURCE_DATE_EPOCH="$epoch" FELUNYX_SOURCE_COMMIT="$commit" FELUNYX_ARCHIVE_DATE="$archive_date" bash -lc "cd '$dst' && makepkg --syncdeps --noconfirm --cleanbuild --clean"; find "$dst" -maxdepth 1 -type f -name '*.pkg.tar.*' ! -name '*.sig' -exec cp -t "$repo" {} +; }
+release_primary_fingerprint=00ACD15E25A79FEE028B0EE57FEA3DA6169C77D6
 release_subkey_fingerprint=6D98B995A1CA6CE4BB906518C7AA337DFA13881E
-release_primary_key_id=7FEA3DA6169C77D6
-key_source=https://calamares.io/pk-7FEA3DA6169C77D6.txt
-key_bundle="$work/calamares-release-key.asc"
+key_source=https://github.com/adriaandegroot.gpg
+key_bundle="$work/calamares-release-key.gpg"
 export GNUPGHOME="$work/gnupg"
 felunyx_prepare_builder_private_dir "$work" "$GNUPGHOME" "$builder" "$(id -g "$builder")"
 curl --fail --location --silent --show-error "$key_source" --output "$key_bundle"
 chown "$builder:$(id -g "$builder")" "$key_bundle"; chmod 0644 "$key_bundle"
 runuser -u "$builder" -- gpg --batch --import-options import-minimal --import "$key_bundle"
-mapfile -t release_fingerprints < <(runuser -u "$builder" -- gpg --batch --with-colons --with-subkey-fingerprint --list-keys "$release_primary_key_id" | awk -F: '$1=="fpr" {print $10}')
-printf '%s\n' "${release_fingerprints[@]}" | grep -Fxq "$release_subkey_fingerprint" || felunyx_die 'Calamares release signing subkey is absent from the official certificate'
-uid_count=$(runuser -u "$builder" -- gpg --batch --with-colons --list-keys "$release_primary_key_id" | awk -F: '$1=="uid" {count++} END {print count+0}')
+mapfile -t release_fingerprints < <(runuser -u "$builder" -- gpg --batch --with-colons --with-subkey-fingerprint --list-keys "$release_primary_fingerprint" | awk -F: '$1=="fpr" {print $10}')
+printf '%s\n' "${release_fingerprints[@]}" | grep -Fxq "$release_primary_fingerprint" || felunyx_die 'Calamares release primary-key fingerprint mismatch'
+printf '%s\n' "${release_fingerprints[@]}" | grep -Fxq "$release_subkey_fingerprint" || felunyx_die 'Calamares release signing subkey is absent from the signer certificate'
+uid_count=$(runuser -u "$builder" -- gpg --batch --with-colons --list-keys "$release_primary_fingerprint" | awk -F: '$1=="uid" {count++} END {print count+0}')
 (( uid_count > 0 )) || felunyx_die 'Calamares release certificate has no usable user identity'
 key_sha256=$(sha256sum "$key_bundle" | awk '{print $1}')
-python3 - "$stage/calamares-release-key.json" "$key_source" "$key_sha256" "$release_primary_key_id" "$release_subkey_fingerprint" "$uid_count" "${release_fingerprints[*]}" <<'PY'
+python3 - "$stage/calamares-release-key.json" "$key_source" "$key_sha256" "$release_primary_fingerprint" "$release_subkey_fingerprint" "$uid_count" "${release_fingerprints[*]}" <<'PY'
 import json,sys
 with open(sys.argv[1],'w') as f:
- json.dump({"schema":1,"source":sys.argv[2],"bundle_sha256":sys.argv[3],"primary_key_id":sys.argv[4],"required_signing_subkey_fingerprint":sys.argv[5],"uid_count":int(sys.argv[6]),"certificate_fingerprints":sys.argv[7].split()},f,indent=2,sort_keys=True); f.write('\n')
+ json.dump({"schema":1,"source":sys.argv[2],"bundle_sha256":sys.argv[3],"primary_key_fingerprint":sys.argv[4],"required_signing_subkey_fingerprint":sys.argv[5],"uid_count":int(sys.argv[6]),"certificate_fingerprints":sys.argv[7].split()},f,indent=2,sort_keys=True); f.write('\n')
 PY
 for pkg in calamares felunyx-identity felunyx-iso-hooks felunyx-calamares-config; do build_package "$pkg"; done
 repo-add "$repo/felunyx.db.tar.zst" "$repo"/*.pkg.tar.*
