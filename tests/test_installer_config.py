@@ -45,6 +45,15 @@ def test_live_package_removed_and_grub_schema_is_real():
     grub=read('grub-default')
     assert 'GRUB_TOP_LEVEL=/boot/vmlinuz-linux-zen' in grub
 
+def test_calamares_presets_are_local_makepkg_sources():
+    package=Path('packages/felunyx-calamares-config')
+    p=(package/'PKGBUILD').read_text()
+    for preset in ('linux-zen.preset','linux-lts.preset'):
+        assert (package/preset).is_file()
+        assert f"'{preset}'" in p
+        assert f'preinstall_copy/etc/mkinitcpio.d/{preset}' not in p
+        assert f'"$srcdir/{preset}"' in p
+
 def test_calamares_source_is_fixed_and_signed():
     p=Path('packages/calamares/PKGBUILD').read_text()
     assert 'pkgver=3.3.14' in p
