@@ -29,6 +29,10 @@ Root documents define the project-wide contract:
 
 - [Phase 1 foundation design](superpowers/specs/2026-08-03-felunyx-foundation-design.md)
 
+## Process
+
+- [Remote, virtual, and hardware validation gates](process/validation-gates.md)
+
 ## Status
 
 - [Phase 1 foundation](status/phase-1-foundation.md)
