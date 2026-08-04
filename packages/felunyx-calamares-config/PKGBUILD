@@ -5,7 +5,7 @@ pkgdesc='Felunyx OS Phase 2 Calamares configuration'
 arch=('any')
 license=('GPL-3.0-or-later')
 depends=('calamares' 'grub' 'efibootmgr' 'btrfs-progs')
-source=('settings.conf' 'partition.conf' 'mount.conf' 'packages.conf' 'bootloader.conf' 'unpackfs.conf' 'services-systemd.conf' 'initcpiocfg.conf' 'initcpio.conf' 'grub-default' 'branding.desc' 'calamares.desktop' 'preinstall_copy/etc/mkinitcpio.d/linux-zen.preset' 'preinstall_copy/etc/mkinitcpio.d/linux-lts.preset')
+source=('settings.conf' 'partition.conf' 'mount.conf' 'packages.conf' 'bootloader.conf' 'unpackfs.conf' 'services-systemd.conf' 'initcpiocfg.conf' 'initcpio.conf' 'grub-default' 'branding.desc' 'calamares.desktop' 'linux-zen.preset' 'linux-lts.preset')
 sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 package() {
   install -Dm0644 "$srcdir/settings.conf" "$pkgdir/etc/calamares/settings.conf"
