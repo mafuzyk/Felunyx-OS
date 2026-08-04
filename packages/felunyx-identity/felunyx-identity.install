@@ -1,0 +1,7 @@
+post_install() {
+  /usr/lib/felunyx/felunyx-apply-os-release
+}
+
+post_upgrade() {
+  /usr/lib/felunyx/felunyx-apply-os-release
+}
