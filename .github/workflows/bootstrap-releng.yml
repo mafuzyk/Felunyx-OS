@@ -1,0 +1,80 @@
+name: Bootstrap exact releng profile
+
+on:
+  push:
+    branches:
+      - agent/phase-2-implementation
+    paths:
+      - .github/workflows/bootstrap-releng.yml
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-24.04
+    container:
+      image: docker.io/archlinux/archlinux:base-devel-20260726.0.562248@sha256:cc47e23460a9172cc7bae82d655edfe7828b0e0bf3b337f512385e0f76ce0a42
+    steps:
+      - name: Check out trusted implementation branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: agent/phase-2-implementation
+          fetch-depth: 0
+
+      - name: Install exact archiso package
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          printf 'Server = https://archive.archlinux.org/repos/2026/07/27/$repo/os/$arch\n' > /etc/pacman.d/mirrorlist
+          pacman -Syy --noconfirm
+          pacman -S --needed --noconfirm archiso=89-1 python git
+          test "$(pacman -Q archiso)" = 'archiso 89-1'
+
+      - name: Import profile and generate complete lock
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf iso/profile
+          mkdir -p iso/upstream
+          cp -a /usr/share/archiso/configs/releng iso/profile
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root=Path('iso/profile')
+          inventory={}
+          for path in sorted(root.rglob('*')):
+              rel=path.relative_to(root).as_posix()
+              if path.is_symlink():
+                  inventory[rel]={"type":"symlink","target":os.readlink(path)}
+              elif path.is_file():
+                  inventory[rel]={"type":"file","sha256":hashlib.sha256(path.read_bytes()).hexdigest()}
+              elif path.is_dir():
+                  inventory[rel]={"type":"dir"}
+          package=next(Path('/var/cache/pacman/pkg').glob('archiso-89-1-any.pkg.tar.zst'))
+          canonical=json.dumps(inventory,sort_keys=True,separators=(',',':')).encode()
+          lock={
+              "schema":1,
+              "archiso_version":"89-1",
+              "upstream_repository":"https://github.com/archlinux/archiso",
+              "upstream_tag":"v89",
+              "archive_date":"2026/07/27",
+              "package_sha256":hashlib.sha256(package.read_bytes()).hexdigest(),
+              "profile_digest":hashlib.sha256(canonical).hexdigest(),
+              "inventory":inventory,
+          }
+          Path('iso/upstream/releng.lock.json').write_text(json.dumps(lock,indent=2,sort_keys=True)+'\n')
+          PY
+          rm .github/workflows/bootstrap-releng.yml
+
+      - name: Commit generated upstream baseline
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name 'Felunyx Build Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add iso/profile iso/upstream/releng.lock.json .github/workflows/bootstrap-releng.yml
+          git diff --cached --check
+          git commit -m 'build: import exact archiso 89 releng baseline'
+          git push origin HEAD:agent/phase-2-implementation
