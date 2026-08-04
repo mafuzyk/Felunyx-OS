@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+source_file=/usr/lib/felunyx/os-release
+target_file=/usr/lib/os-release
+[[ -f $source_file ]] || { printf 'felunyx-identity: missing template: %s\n' "$source_file" >&2; exit 1; }
+install -d -m0755 /usr/lib
+replacement=$(mktemp /usr/lib/.os-release.felunyx.XXXXXX)
+trap 'rm -f -- "$replacement"' EXIT
+install -m0644 "$source_file" "$replacement"
+mv -f -- "$replacement" "$target_file"
+trap - EXIT
+if [[ -L /etc/os-release ]]; then
+  link_target=$(readlink /etc/os-release)
+  [[ $link_target == ../usr/lib/os-release || $link_target == /usr/lib/os-release ]] || {
+    printf 'felunyx-identity: refusing unexpected /etc/os-release link: %s\n' "$link_target" >&2
+    exit 1
+  }
+elif [[ -e /etc/os-release ]]; then
+  printf 'felunyx-identity: refusing to replace non-symlink /etc/os-release\n' >&2
+  exit 1
+else
+  ln -s ../usr/lib/os-release /etc/os-release
+fi
