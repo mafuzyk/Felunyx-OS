@@ -1,0 +1,85 @@
+name: Build Phase 2 ISO
+
+on:
+  pull_request:
+    paths:
+      - build/**
+      - installer/**
+      - iso/**
+      - packages/**
+      - tools/**
+      - tests/**
+      - .github/workflows/build-iso.yml
+      - .github/workflows/virtual-smoke.yml
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [ frozen, integration ]
+        default: frozen
+      archive_date:
+        description: Arch Linux Archive date (YYYY/MM/DD)
+        default: 2026/07/27
+  schedule:
+    - cron: '17 4 * * 1'
+
+permissions:
+  contents: read
+
+env:
+  BUILDER_IMAGE: felunyx-phase2-builder
+
+concurrency:
+  group: build-iso-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Check out trusted source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Record runner and recover disk space
+        run: |
+          set -Eeuo pipefail
+          uname -a
+          df -h
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet || true
+          docker system prune --all --force || true
+          df -h
+      - name: Build canonical environment
+        run: docker build --tag "$BUILDER_IMAGE" --file build/Containerfile .
+      - name: Run frozen or integration build
+        env:
+          REQUESTED_MODE: ${{ inputs.mode || 'frozen' }}
+          REQUESTED_DATE: ${{ inputs.archive_date || '2026/07/27' }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p artifacts
+          args=(--mode "$REQUESTED_MODE" --output /workspace/artifacts)
+          if [[ $REQUESTED_MODE == frozen ]]; then args+=(--archive-date "$REQUESTED_DATE"); fi
+          docker run --rm --privileged \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            --env SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" \
+            "$BUILDER_IMAGE" \
+            "tools/felunyx-build ${args[*]}"
+      - name: Upload compact build evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: felunyx-phase2-${{ github.run_id }}
+          path: |
+            artifacts/*.iso
+            artifacts/*.json
+            artifacts/*.txt
+            artifacts/SHA256SUMS
+            artifacts/*.log
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 7
