@@ -1,6 +1,7 @@
 amd-ucode
 arch-install-scripts
 archlinux-keyring
+at-spi2-core
 base
 btrfs-progs
 calamares
@@ -27,6 +28,7 @@ noto-fonts
 plasma-meta
 plasma-wayland-protocols
 polkit-kde-agent
+python-atspi
 qemu-guest-agent
 sddm
 sof-firmware
