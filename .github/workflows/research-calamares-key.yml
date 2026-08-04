@@ -1,8 +1,7 @@
 name: Research Calamares signing key
 
 on:
-  push:
-    branches: [ research/calamares-signing-key ]
+  pull_request:
     paths:
       - .github/workflows/research-calamares-key.yml
   workflow_dispatch:
