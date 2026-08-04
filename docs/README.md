@@ -1,6 +1,6 @@
 # Felunyx Documentation
 
-This directory contains detailed product, architecture, governance, specification, and phase-status material.
+This directory contains detailed product, architecture, governance, specification, research, and phase-status material.
 
 Root documents define the project-wide contract:
 
@@ -28,6 +28,11 @@ Root documents define the project-wide contract:
 ## Superpowers specifications
 
 - [Phase 1 foundation design](superpowers/specs/2026-08-03-felunyx-foundation-design.md)
+- [Phase 2 reproducible ISO skeleton design](superpowers/specs/2026-08-04-phase-2-reproducible-iso-design.md)
+
+## Research
+
+- [Phase 2 source ledger](research/phase-2-source-ledger.md)
 
 ## Process
 
@@ -36,12 +41,14 @@ Root documents define the project-wide contract:
 ## Status
 
 - [Phase 1 foundation](status/phase-1-foundation.md)
+- [Phase 2 reproducible ISO skeleton](status/phase-2-reproducible-iso.md)
 
 ## Documentation rules
 
 - Canonical decisions belong in [DECISIONS.md](../DECISIONS.md).
 - Product documents explain behavior and experience.
 - Architecture documents explain boundaries, ownership, interfaces, data flow, and failure containment.
+- Research ledgers identify external contracts, versions, caveats, and refresh requirements.
 - Plans explain implementation sequence and are written only after their specification is approved.
 - Status documents record evidence against phase exit criteria.
 - A roadmap item is not a shipped feature.
