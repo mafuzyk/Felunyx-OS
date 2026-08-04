@@ -3,6 +3,7 @@ set -Eeuo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 source "$ROOT/tools/lib/common.sh"
 source "$ROOT/tools/lib/mount_guard.sh"
+source "$ROOT/tools/lib/build_user.sh"
 usage(){ echo "usage: ${0##*/} --mode integration|frozen --output DIR [--archive-date YYYY/MM/DD] [--keep-work] [--dry-run]"; }
 mode= output= archive_date= keep_work=false dry_run=false
 while (($#)); do case $1 in --mode) mode=${2:-}; shift 2;; --output) output=${2:-}; shift 2;; --archive-date) archive_date=${2:-}; shift 2;; --keep-work) keep_work=true; shift;; --dry-run) dry_run=true; shift;; -h|--help) usage; exit 0;; *) usage >&2; exit 64;; esac; done
@@ -37,7 +38,8 @@ for cmd in mkarchiso makepkg repo-add runuser pacman python3 sha256sum gpg; do f
 builder=felunyx-builder; if ! id "$builder" >/dev/null 2>&1; then useradd --create-home --shell /bin/bash "$builder"; fi
 install -d -o "$builder" -g "$builder" "$work/pkgwork" "$repo"; printf '%s ALL=(ALL) NOPASSWD: /usr/bin/pacman\n' "$builder" > /etc/sudoers.d/felunyx-builder; chmod 0440 /etc/sudoers.d/felunyx-builder
 build_package(){ local name=$1 src="$ROOT/packages/$1" dst="$work/pkgwork/$1"; cp -a "$src" "$dst"; chown -R "$builder:$builder" "$dst"; runuser -u "$builder" -- env SOURCE_DATE_EPOCH="$epoch" FELUNYX_SOURCE_COMMIT="$commit" FELUNYX_ARCHIVE_DATE="$archive_date" bash -lc "cd '$dst' && makepkg --syncdeps --noconfirm --cleanbuild --clean"; find "$dst" -maxdepth 1 -type f -name '*.pkg.tar.*' ! -name '*.sig' -exec cp -t "$repo" {} +; }
-key_fingerprint=6D98B995A1CA6CE4BB906518C7AA337DFA13881E; export GNUPGHOME="$work/gnupg"; install -d -m0700 -o "$builder" -g "$builder" "$GNUPGHOME"
+key_fingerprint=6D98B995A1CA6CE4BB906518C7AA337DFA13881E; export GNUPGHOME="$work/gnupg"
+felunyx_prepare_builder_private_dir "$work" "$GNUPGHOME" "$builder" "$(id -g "$builder")"
 runuser -u "$builder" -- gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys "$key_fingerprint"
 actual_fingerprint=$(runuser -u "$builder" -- gpg --batch --with-colons --fingerprint "$key_fingerprint" | awk -F: '$1=="fpr" {print $10; exit}')
 [[ $actual_fingerprint == "$key_fingerprint" ]] || felunyx_die "Calamares signing-key fingerprint mismatch: $actual_fingerprint"
