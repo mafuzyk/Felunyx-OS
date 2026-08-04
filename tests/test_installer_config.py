@@ -49,6 +49,8 @@ def test_calamares_source_is_fixed_and_signed():
     p=Path('packages/calamares/PKGBUILD').read_text()
     assert 'pkgver=3.3.14' in p
     assert '5547f80db067dea923ae693ba6bb88eb2b2eeac1da3ebec42fce453e31c290c0' in p
-    assert '6D98B995A1CA6CE4BB906518C7AA337DFA13881E' in p
-    assert 'tar.gz.sig' in p
+    assert '1dcf71c518ca9a08f62ad6c6532001c46a72505bac7452e52c567cbd3021a076' in p
+    assert "validpgpkeys=('00ACD15E25A79FEE028B0EE57FEA3DA6169C77D6')" in p
+    assert 'tar.gz.asc' in p
+    assert 'tar.gz.sig' not in p
     assert '-DINSTALL_CONFIG=OFF' in p and '-DWITH_QT6=ON' in p
