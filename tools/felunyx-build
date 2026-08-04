@@ -103,6 +103,7 @@ with open(sys.argv[1],'w') as f:
  json.dump({"schema":1,"source":sys.argv[2],"bundle_sha256":sys.argv[3],"primary_key_fingerprint":sys.argv[4],"required_signing_subkey_fingerprint":sys.argv[5],"uid_count":int(sys.argv[6]),"certificate_fingerprints":sys.argv[7].split()},f,indent=2,sort_keys=True); f.write('\n')
 PY
 for pkg in calamares felunyx-identity felunyx-iso-hooks felunyx-calamares-config; do build_package "$pkg"; done
+"$pacman_wrapper" --files --refresh --noconfirm
 "$ROOT/tools/felunyx-validate" --profile "$profile" --report "$stage/profile-validation.json"
 exec > >(tee "$work/build.log") 2>&1; mkarchiso -v -w "$work/archiso" -o "$out" "$profile"
 iso=$(find "$out" -maxdepth 1 -type f -name '*.iso' -print -quit); [[ -n $iso ]] || felunyx_die 'mkarchiso completed without an ISO artifact'
