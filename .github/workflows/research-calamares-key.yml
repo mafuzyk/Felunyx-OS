@@ -13,7 +13,7 @@ jobs:
   inspect:
     runs-on: ubuntu-24.04
     steps:
-      - name: Retrieve identity certificate and technical update
+      - name: Retrieve signer certificates and release artifacts
         run: |
           set -Eeuo pipefail
           curl --fail --location --silent --show-error \
@@ -22,7 +22,20 @@ jobs:
           curl --fail --location --silent --show-error \
             'https://keys.openpgp.org/vks/v1/by-fingerprint/6D98B995A1CA6CE4BB906518C7AA337DFA13881E' \
             --output calamares-technical-update.asc
-          sha256sum calamares-identity-certificate.asc calamares-technical-update.asc
+          curl --fail --location --silent --show-error \
+            'https://github.com/calamares/calamares/releases/download/v3.3.14/calamares-3.3.14.tar.gz' \
+            --output calamares-3.3.14.tar.gz
+          curl --fail --location --silent --show-error \
+            'https://github.com/calamares/calamares/releases/download/v3.3.14/calamares-3.3.14.tar.gz.sig' \
+            --output calamares-3.3.14.tar.gz.sig
+          printf '%s  %s\n' \
+            '5547f80db067dea923ae693ba6bb88eb2b2eeac1da3ebec42fce453e31c290c0' \
+            'calamares-3.3.14.tar.gz' | sha256sum --check --strict
+          sha256sum \
+            calamares-identity-certificate.asc \
+            calamares-technical-update.asc \
+            calamares-3.3.14.tar.gz.sig
+
       - name: Merge and inspect exact OpenPGP identities
         run: |
           set -Eeuo pipefail
@@ -38,6 +51,25 @@ jobs:
           gpg --batch --armor --export 00ACD15E25A79FEE028B0EE57FEA3DA6169C77D6 \
             > calamares-release-key-merged.asc
           sha256sum calamares-release-key-merged.asc
+
+      - name: Verify the exact Calamares 3.3.14 release signature
+        run: |
+          set -Eeuo pipefail
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          set +e
+          gpg --batch --status-fd 1 \
+            --verify calamares-3.3.14.tar.gz.sig calamares-3.3.14.tar.gz \
+            > calamares-release-signature-status.txt \
+            2> calamares-release-signature-stderr.txt
+          verify_status=$?
+          set -e
+          printf 'gpg_verify_exit=%s\n' "$verify_status" | tee calamares-release-signature-result.txt
+          cat calamares-release-signature-status.txt
+          cat calamares-release-signature-stderr.txt
+          grep -F '[GNUPG:] VALIDSIG 6D98B995A1CA6CE4BB906518C7AA337DFA13881E' \
+            calamares-release-signature-status.txt
+          exit "$verify_status"
+
       - name: Upload research evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -48,5 +80,9 @@ jobs:
             calamares-technical-update.asc
             calamares-release-key-merged.asc
             calamares-release-key-identities.txt
+            calamares-3.3.14.tar.gz.sig
+            calamares-release-signature-status.txt
+            calamares-release-signature-stderr.txt
+            calamares-release-signature-result.txt
           if-no-files-found: warn
           retention-days: 7
