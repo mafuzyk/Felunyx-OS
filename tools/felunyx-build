@@ -33,20 +33,29 @@ with open(sys.argv[1],'w') as f: json.dump(dict(zip(keys,vals)),f,indent=2,sort_
 PY
 if [[ $dry_run == true ]]; then mkdir -p "$output"; cp "$stage/build-plan.json" "$output/"; keep_work=false; exit 0; fi
 [[ $(id -u) -eq 0 ]] || felunyx_die 'full ISO build must run as root inside the canonical environment'
-for cmd in mkarchiso makepkg repo-add runuser pacman python3 sha256sum gpg; do felunyx_require_command "$cmd"; done
+for cmd in mkarchiso makepkg repo-add runuser pacman python3 sha256sum gpg curl; do felunyx_require_command "$cmd"; done
 "$ROOT/tools/felunyx-preflight" --json "$stage/preflight.json"
 builder=felunyx-builder; if ! id "$builder" >/dev/null 2>&1; then useradd --create-home --shell /bin/bash "$builder"; fi
 install -d -o "$builder" -g "$builder" "$work/pkgwork" "$repo"; printf '%s ALL=(ALL) NOPASSWD: /usr/bin/pacman\n' "$builder" > /etc/sudoers.d/felunyx-builder; chmod 0440 /etc/sudoers.d/felunyx-builder
 build_package(){ local name=$1 src="$ROOT/packages/$1" dst="$work/pkgwork/$1"; cp -a "$src" "$dst"; chown -R "$builder:$builder" "$dst"; runuser -u "$builder" -- env SOURCE_DATE_EPOCH="$epoch" FELUNYX_SOURCE_COMMIT="$commit" FELUNYX_ARCHIVE_DATE="$archive_date" bash -lc "cd '$dst' && makepkg --syncdeps --noconfirm --cleanbuild --clean"; find "$dst" -maxdepth 1 -type f -name '*.pkg.tar.*' ! -name '*.sig' -exec cp -t "$repo" {} +; }
 key_fingerprint=6D98B995A1CA6CE4BB906518C7AA337DFA13881E
-keyserver=hkp://keyserver.ubuntu.com:80
+key_source=https://github.com/adriaandegroot.gpg
+key_bundle="$work/adriaandegroot.gpg"
 export GNUPGHOME="$work/gnupg"
 felunyx_prepare_builder_private_dir "$work" "$GNUPGHOME" "$builder" "$(id -g "$builder")"
-runuser -u "$builder" -- gpg --batch --keyserver "$keyserver" --recv-keys "$key_fingerprint"
+curl --fail --location --silent --show-error "$key_source" --output "$key_bundle"
+chown "$builder:$(id -g "$builder")" "$key_bundle"; chmod 0644 "$key_bundle"
+runuser -u "$builder" -- gpg --batch --import-options import-minimal --import "$key_bundle"
 actual_fingerprint=$(runuser -u "$builder" -- gpg --batch --with-colons --fingerprint "$key_fingerprint" | awk -F: '$1=="fpr" {print $10; exit}')
 uid_count=$(runuser -u "$builder" -- gpg --batch --with-colons --list-keys "$key_fingerprint" | awk -F: '$1=="uid" {count++} END {print count+0}')
 [[ $actual_fingerprint == "$key_fingerprint" ]] || felunyx_die "Calamares signing-key fingerprint mismatch: $actual_fingerprint"
 (( uid_count > 0 )) || felunyx_die 'Calamares signing key has no usable user identity'
+key_sha256=$(sha256sum "$key_bundle" | awk '{print $1}')
+python3 - "$stage/calamares-release-key.json" "$key_source" "$key_sha256" "$actual_fingerprint" "$uid_count" <<'PY'
+import json,sys
+with open(sys.argv[1],'w') as f:
+ json.dump({"schema":1,"source":sys.argv[2],"bundle_sha256":sys.argv[3],"fingerprint":sys.argv[4],"uid_count":int(sys.argv[5])},f,indent=2,sort_keys=True); f.write('\n')
+PY
 for pkg in calamares felunyx-identity felunyx-iso-hooks felunyx-calamares-config; do build_package "$pkg"; done
 repo-add "$repo/felunyx.db.tar.zst" "$repo"/*.pkg.tar.*
 "$ROOT/tools/felunyx-validate" --profile "$profile" --report "$stage/profile-validation.json"
@@ -63,5 +72,5 @@ import json,sys
 with open(sys.argv[3],'w') as f: json.dump({"environment":json.load(open(sys.argv[1])),"releng":json.load(open(sys.argv[2]))},f,indent=2,sort_keys=True); f.write('\n')
 PY
 "$ROOT/tools/felunyx-validate" --profile "$profile" --iso "$stage"/*.iso --report "$stage/validation-report.json"
-(cd "$stage" && sha256sum *.iso build-info.json packages.txt source-lock.json validation-report.json > SHA256SUMS)
+(cd "$stage" && sha256sum *.iso build-info.json calamares-release-key.json packages.txt source-lock.json validation-report.json > SHA256SUMS)
 output=$(felunyx_realpath "$output"); publish_tmp="${output}.new.$$"; rm -rf -- "$publish_tmp"; mkdir -p -- "$publish_tmp"; cp -a "$stage/." "$publish_tmp/"; rm -rf -- "$output"; mv -- "$publish_tmp" "$output"
