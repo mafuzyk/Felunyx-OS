@@ -35,3 +35,9 @@ def test_upstream_lock_is_exact():
 def test_only_declared_template_token_exists():
     text=Path('iso/profile/pacman.conf').read_text()
     assert text.count('@FELUNYX_REPO_URI@')==1
+
+def test_live_sudoers_mode_is_owned_by_the_package_not_airootfs():
+    profile=Path('iso/profile/profiledef.sh').read_text()
+    hooks=Path('packages/felunyx-iso-hooks/PKGBUILD').read_text()
+    assert '["/etc/sudoers.d/10-felunyx-live"]' not in profile
+    assert 'install -Dm0440 "$srcdir/10-felunyx-live" "$pkgdir/etc/sudoers.d/10-felunyx-live"' in hooks
