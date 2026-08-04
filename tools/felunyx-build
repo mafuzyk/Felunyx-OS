@@ -108,7 +108,7 @@ for pkg in calamares felunyx-identity felunyx-iso-hooks felunyx-calamares-config
 exec > >(tee "$work/build.log") 2>&1; mkarchiso -v -w "$work/archiso" -o "$out" "$profile"
 iso=$(find "$out" -maxdepth 1 -type f -name '*.iso' -print -quit); [[ -n $iso ]] || felunyx_die 'mkarchiso completed without an ISO artifact'
 cp "$iso" "$stage/Felunyx-OS-phase2-${commit:0:12}-x86_64.iso"; cp "$work/build.log" "$stage/build.log"
-manifest=$(find "$out" -maxdepth 1 -type f -name '*pkglist*.txt' -print -quit)
+manifest=$(find "$work/archiso/iso" -maxdepth 3 -type f -name 'pkglist.*.txt' -print -quit)
 if [[ -n $manifest ]]; then
   cp "$manifest" "$stage/packages.txt"
 else
