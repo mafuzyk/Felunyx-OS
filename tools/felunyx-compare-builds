@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import argparse, hashlib, json, os, tempfile
+from pathlib import Path
+FUNCTIONAL=("packages.txt","source-lock.json","validation-report.json")
+def sha(path:Path): return hashlib.sha256(path.read_bytes()).hexdigest()
+def main():
+    ap=argparse.ArgumentParser(); ap.add_argument('a',type=Path); ap.add_argument('b',type=Path); ap.add_argument('--report',type=Path,required=True); ns=ap.parse_args()
+    items=[]
+    for name in FUNCTIONAL:
+        pa,pb=ns.a/name,ns.b/name
+        same=pa.is_file() and pb.is_file() and sha(pa)==sha(pb)
+        items.append({"path":name,"status":"pass" if same else "fail","a":sha(pa) if pa.is_file() else None,"b":sha(pb) if pb.is_file() else None})
+    ia=next(ns.a.glob('*.iso'),None); ib=next(ns.b.glob('*.iso'),None)
+    r3=bool(ia and ib and sha(ia)==sha(ib))
+    status='pass' if all(i['status']=='pass' for i in items) else 'fail'
+    data={"schema":1,"status":status,"r1":"pass" if status=='pass' else 'fail',"r2":"pass" if status=='pass' else 'fail',"r3":"pass" if r3 else 'different',"functional":items}
+    ns.report.parent.mkdir(parents=True,exist_ok=True); fd,tmp=tempfile.mkstemp(prefix='.'+ns.report.name+'.',dir=ns.report.parent)
+    with os.fdopen(fd,'w') as f: json.dump(data,f,indent=2,sort_keys=True); f.write('\n')
+    os.replace(tmp,ns.report)
+    return 0 if status=='pass' else 1
+if __name__=='__main__': raise SystemExit(main())
