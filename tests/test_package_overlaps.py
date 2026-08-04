@@ -3,7 +3,7 @@ import os
 import subprocess
 from pathlib import Path
 
-REQUIRED_PACKAGES={"linux-zen","linux-lts","linux-firmware","amd-ucode","intel-ucode","btrfs-progs","grub","efibootmgr","networkmanager","plasma-meta","plasma-wayland-protocols","sddm","dolphin","konsole","calamares","felunyx-identity","felunyx-iso-hooks","felunyx-calamares-config"}
+REQUIRED_PACKAGES={"linux-zen","linux-lts","linux-firmware","amd-ucode","intel-ucode","btrfs-progs","grub","efibootmgr","networkmanager","plasma-meta","plasma-wayland-protocols","sddm","dolphin","konsole","calamares","felunyx-identity","felunyx-iso-hooks","felunyx-calamares-config","mkinitcpio-nfs-utils","nbd"}
 
 
 def valid_profile(tmp_path:Path):
