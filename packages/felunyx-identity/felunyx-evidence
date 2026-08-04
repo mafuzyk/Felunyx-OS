@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import json, subprocess, time
+from pathlib import Path
+
+def enabled() -> bool:
+    cmdline=Path('/proc/cmdline').read_text(errors='ignore')
+    fw=Path('/sys/firmware/qemu_fw_cfg/by_name/opt/felunyx/evidence/raw')
+    return 'felunyx.evidence=1' in cmdline or (fw.exists() and fw.read_bytes().rstrip(b'\0\n') == b'1')
+
+def active(unit: str) -> bool:
+    return subprocess.run(['systemctl','is-active','--quiet',unit],check=False).returncode == 0
+
+def main() -> int:
+    if not enabled(): return 0
+    for _ in range(90):
+        if active('graphical.target') or active('multi-user.target'): break
+        time.sleep(1)
+    os_release={}
+    for line in Path('/usr/lib/os-release').read_text().splitlines():
+        if '=' in line:
+            k,v=line.split('=',1); os_release[k]=v.strip('"')
+    uname=subprocess.check_output(['uname','-r'],text=True).strip()
+    data={
+      'schema':1,'id':os_release.get('ID'),'pretty_name':os_release.get('PRETTY_NAME'),
+      'kernel':uname,'kernel_variant':'lts' if 'lts' in uname else 'zen' if 'zen' in uname else 'unknown',
+      'graphical_target':active('graphical.target'),'sddm':active('sddm.service'),
+      'networkmanager':active('NetworkManager.service'),
+      'sshd_active':active('sshd.service'),'live':Path('/run/felunyx/live').exists(),
+    }
+    line='FELUNYX_EVIDENCE='+json.dumps(data,sort_keys=True)
+    Path('/run/felunyx').mkdir(parents=True,exist_ok=True)
+    Path('/run/felunyx/evidence.json').write_text(json.dumps(data,indent=2,sort_keys=True)+'\n')
+    for target in ('/dev/ttyS0','/dev/console'):
+        try:
+            with open(target,'w') as f: f.write(line+'\n')
+            break
+        except OSError: pass
+    return 0
+if __name__=='__main__': raise SystemExit(main())

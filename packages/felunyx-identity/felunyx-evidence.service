@@ -1,0 +1,10 @@
+[Unit]
+Description=Emit Felunyx virtual validation evidence
+After=multi-user.target display-manager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/felunyx/felunyx-evidence
+
+[Install]
+WantedBy=multi-user.target

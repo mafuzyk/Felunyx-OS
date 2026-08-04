@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Felunyx Virtual Installer Harness
+Exec=/usr/lib/felunyx/tests/drive-installation.py
+OnlyShowIn=KDE;
+NoDisplay=true
+X-KDE-autostart-phase=2
