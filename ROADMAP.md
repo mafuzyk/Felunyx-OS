@@ -4,6 +4,16 @@ Felunyx is developed through review-gated phases. A phase is complete only when 
 
 The roadmap describes order and proof, not release dates.
 
+## Validation gates
+
+Every phase declares evidence through three possible gates:
+
+- **R — Remote:** source, schemas, documentation, static analysis, unit/contract tests, manifests, and CI artifacts.
+- **V — Virtual:** boot, installation, reboot, recovery, and integration exercised in disposable virtual machines.
+- **H — Hardware:** physical firmware, graphics, radios, peripherals, power management, storage, displays, and long-running behavior.
+
+A phase requires only the gates relevant to its promise. Passing R never implies V or H. Work blocked solely by V or H may allow isolated preparation for the next phase, but neither phase is marked complete until its required evidence passes. See [the validation-gates policy](docs/process/validation-gates.md).
+
 ## Phase 1 — Foundation and architecture
 
 **Goal:** establish one canonical understanding of what Felunyx is and how it will be built.
@@ -29,7 +39,7 @@ The roadmap describes order and proof, not release dates.
 - foundation changes are available in a reviewable pull request;
 - the user approves the written specification.
 
-**Current state:** in review.
+**Current state:** complete and approved.
 
 ---
 
@@ -292,3 +302,5 @@ This is a parallel research and implementation track that may begin experimental
 - A feature is not complete without failure handling, tests, and documentation.
 - Native desktop work never blocks the first useful Felunyx distribution.
 - Phase boundaries are review points, not ceremonial labels.
+- Completion claims name the strongest gate actually passed: R, V, or H.
+- A hardware-blocked phase may allow isolated next-phase preparation, but blocked evidence is never waived or disguised as success.
