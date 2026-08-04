@@ -1,0 +1,10 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = filesystem
+
+[Action]
+Description = Reapplying Felunyx OS identity
+When = PostTransaction
+Exec = /usr/lib/felunyx/felunyx-apply-os-release
