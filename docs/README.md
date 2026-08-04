@@ -1,6 +1,6 @@
 # Felunyx Documentation
 
-This directory contains detailed product, architecture, governance, specification, and phase-status material.
+This directory contains detailed product, architecture, governance, specification, research, implementation-plan, and phase-status material.
 
 Root documents define the project-wide contract:
 
@@ -25,17 +25,27 @@ Root documents define the project-wide contract:
 - [Native Felunyx Desktop](architecture/felunyx-desktop.md)
 - [Repository map](architecture/repository-map.md)
 
+## Process
+
+- [Remote, Virtual, and Hardware validation gates](process/validation-gates.md)
+
 ## Superpowers specifications
 
 - [Phase 1 foundation design](superpowers/specs/2026-08-03-felunyx-foundation-design.md)
+- [Phase 2 reproducible ISO design](superpowers/specs/2026-08-04-phase-2-reproducible-iso-design.md)
 
-## Process
+## Superpowers implementation plans
 
-- [Remote, virtual, and hardware validation gates](process/validation-gates.md)
+- [Phase 2 reproducible ISO implementation plan](superpowers/plans/2026-08-04-phase-2-reproducible-iso.md)
+
+## Research
+
+- [Phase 2 source ledger](research/phase-2-source-ledger.md)
 
 ## Status
 
 - [Phase 1 foundation](status/phase-1-foundation.md)
+- [Phase 2 reproducible ISO](status/phase-2-reproducible-iso.md)
 
 ## Documentation rules
 
