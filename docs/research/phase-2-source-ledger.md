@@ -2,7 +2,7 @@
 
 **Research date:** 2026-08-04
 
-This ledger records the external contracts used to design the Phase 2 ISO. It is evidence for decisions, not a frozen substitute for checking the exact versions selected during implementation.
+This ledger records the external contracts used to design and plan the Phase 2 ISO. It is evidence for decisions, not a substitute for checking the exact locked versions during implementation.
 
 Priority order:
 
@@ -12,164 +12,136 @@ Priority order:
 4. archived source only to understand historical configuration contracts, with explicit caveats;
 5. community material only as a lead, never as the sole authority for a critical decision.
 
+## Locked implementation facts
+
+- `archiso`: `89-1`, published by Arch on 2026-07-27.
+- Calamares: `3.3.14`, source SHA-256 `5547f80db067dea923ae693ba6bb88eb2b2eeac1da3ebec42fce453e31c290c0`.
+- Calamares signing fingerprint: `6D98B995A1CA6CE4BB906518C7AA337DFA13881E`.
+- First hosted executor label: `ubuntu-24.04`.
+- Current public-runner envelope: 4 CPUs, 16 GB RAM, 14 GB SSD.
+
 ## Sources
 
 ### S-001 — Archiso overview
 
 - URL: https://wiki.archlinux.org/title/Archiso
 - Authority: ArchWiki
-- Supports: use of `archiso`; `releng` as the official monthly-ISO profile and customization starting point; profile structure; UEFI and BIOS paths; QEMU/OVMF testing; work-directory mount warning.
-- Design effects: committed `releng` lineage, UEFI-required/Bios-best-effort policy, `run_archiso`/QEMU investigation, guarded work-tree cleanup.
-- Caveat: Wiki guidance follows current Arch and must be paired with the exact locked `archiso` release.
+- Supports: `releng` as the official monthly-ISO profile and customization starting point; UEFI/BIOS paths; QEMU/OVMF testing; interrupted-workdir mount warning.
+- Design effects: committed `releng` lineage, UEFI-required/BIOS-best-effort policy, guarded work-tree cleanup.
 
-### S-002 — `mkarchiso` manual
+### S-002 — Archiso package 89-1
+
+- URL: https://archlinux.org/packages/extra/any/archiso/
+- Authority: Arch package database
+- Supports: current exact version, package signature metadata, optional `edk2-ovmf`, `qemu-desktop`, and GRUB integration.
+- Design effects: first baseline lock and virtual-test dependencies.
+
+### S-003 — `mkarchiso` manual
 
 - URL: https://man.archlinux.org/man/mkarchiso.1.en
 - Authority: Arch package manual
-- Supports: `mkarchiso` input/output contract, pacman configuration, install directory and ISO label constraints, work/output directories, profile-directory invocation.
-- Design effects: repository scripts wrap `mkarchiso`; identity fields are validated; profile path is explicit.
-- Caveat: option availability is tied to the locked `archiso` version.
+- Supports: input/output, pacman configuration, label/install-directory constraints, work/output directories, and profile invocation.
 
-### S-003 — Arch Linux Archive
+### S-004 — Arch Linux Archive
 
 - URL: https://wiki.archlinux.org/title/Arch_Linux_Archive
 - Authority: ArchWiki
-- Supports: daily repository snapshots and exact historical package epochs; warning against mixing archived and current mirrors.
-- Design effects: frozen build mode, source date lock, hard failure instead of fallback to current repositories.
-- Caveat: very old packages may move to the historical archive and keyring history can complicate verification.
+- Supports: daily repository snapshots and warning against mixing archived and current mirrors.
+- Design effects: frozen build mode and hard failure rather than epoch fallback.
 
-### S-004 — Arch reproducible builds
+### S-005 — Arch reproducible builds
 
 - URL: https://wiki.archlinux.org/title/Reproducible_builds
-- Authority: ArchWiki / Arch reproducibility effort
-- Supports: Arch is still working toward reproducibility for all packages; byte differences can originate in upstream packages and tooling; `repro` and `diffoscope`-style investigation.
-- Design effects: R1/R2/R3 levels; Phase 2 requires inputs and functional payload, investigates byte differences instead of promising universal byte identity.
-- Caveat: the page notes known keyring and test-environment issues.
+- Authority: Arch reproducibility effort
+- Supports: byte differences may originate upstream; investigation tools and limitations.
+- Design effects: R1/R2/R3 levels and structured difference reports.
 
-### S-005 — `xorriso` manual
+### S-006 — `xorriso` manual
 
 - URL: https://man.archlinux.org/man/xorriso.1
 - Authority: upstream manual packaged by Arch
-- Supports: ISO creation, fixed timestamp controls, `SOURCE_DATE_EPOCH`, reproducibility requirements, dependence on exact `xorriso` version and input metadata.
-- Design effects: build epoch and tool versions recorded; R3 comparison; ISO metadata difference report.
-- Caveat: different `xorriso` versions may legitimately produce different output.
+- Supports: ISO creation, fixed timestamp controls, `SOURCE_DATE_EPOCH`, and exact-tool-version relevance.
 
-### S-006 — GitHub-hosted runners
+### S-007 — GitHub-hosted runners
 
 - URL: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
 - Authority: GitHub documentation
-- Supports: standard public Linux runner is a fresh VM with 4 CPUs, 16 GB RAM, and 14 GB SSD; `ubuntu-slim` is an unprivileged container unsuitable for mounts, Docker-in-Docker, and low-level kernel operations.
-- Design effects: standard `ubuntu-24.04` first executor, storage preflight, explicit prohibition on `ubuntu-slim` for image builds.
-- Caveat: runner images and available labels evolve; workflow logs must record the actual runner image.
+- Supports: public `ubuntu-24.04` is a fresh VM with 4 CPUs, 16 GB RAM and 14 GB SSD; `ubuntu-slim` is an unprivileged container unsuitable for mounts and low-level kernel work.
+- Design effects: standard VM executor, free-space preflight, prohibition on slim builds.
 
-### S-007 — Secure use of GitHub Actions
+### S-008 — Secure GitHub Actions use
 
 - URL: https://docs.github.com/en/actions/reference/security/secure-use
 - Authority: GitHub documentation
-- Supports: full-length commit SHA is the immutable way to pin an action; action source should be audited.
-- Design effects: SHA-pinned actions, minimum permissions, no untrusted privileged builds.
-- Caveat: pinning prevents tag movement but does not replace source review.
+- Supports: full-length commit SHA is the immutable way to pin actions.
+- Design effects: SHA-pinned actions and source review.
 
-### S-008 — Self-hosted runners
+### S-009 — Self-hosted runners
 
 - URL: https://docs.github.com/en/actions/reference/runners/self-hosted-runners
 - Authority: GitHub documentation
-- Supports: replaceable runner machines and operator responsibility for resources and software.
-- Design effects: executor-independent build contract; dedicated VM fallback.
-- Caveat: a privileged self-hosted runner attached to a public repository must not execute untrusted fork code.
+- Supports: replaceable operator-owned machines.
+- Design effects: executor independence and prohibition on privileged untrusted fork runs.
 
-### S-009 — GNU GRUB 2.14 manual
+### S-010 — GNU GRUB manual
 
 - URL: https://www.gnu.org/software/grub/manual/grub/html_node/Simple-configuration.html
-- Authority: GNU GRUB upstream manual
-- Supports: `GRUB_TOP_LEVEL` selects a kernel image as top-level entry; title-based defaults are discouraged because titles can be unstable or translated; submenu behavior is configurable.
-- Design effects: Zen default selected by kernel path or stable identifier; LTS remains explicit and testable.
-- Caveat: generated Arch scripts and packaged GRUB version must be tested together.
+- Authority: GNU GRUB upstream
+- Supports: `GRUB_TOP_LEVEL` and instability of title-based defaults.
+- Design effects: stable Zen default and explicit LTS fallback.
 
-### S-010 — Btrfs subvolume manual
+### S-011 — Btrfs subvolume manual
 
 - URL: https://man.archlinux.org/man/btrfs-subvolume.8.html
 - Authority: Btrfs manual packaged by Arch
-- Supports: subvolume behavior and distinction between per-mount generic options and filesystem-wide specific options.
-- Design effects: conservative mount options; no unproven per-device tuning; explicit snapshot boundaries.
-- Caveat: many Btrfs-specific options affect the entire filesystem even when written on one subvolume mount.
+- Supports: subvolume behavior and filesystem-wide impact of several Btrfs-specific mount options.
+- Design effects: conservative `compress=zstd:1`, no speculative hardware tuning.
 
-### S-011 — Calamares project home
+### S-012 — Calamares project home/about
 
-- URL: https://calamares.io/
+- URLs: https://calamares.io/ and https://calamares.io/about/
 - Authority: Calamares project
-- Supports: Calamares remains a distribution-agnostic installer framework and development has moved to Codeberg.
-- Design effects: fetch exact current release from the current upstream home; do not follow the archived GitHub repository as a floating source.
-- Caveat: website migration means some older documentation and links still refer to GitHub.
+- Supports: development moved to Codeberg, Qt 6/C++17/Python/YAML architecture, current release signing fingerprint.
 
-### S-012 — Calamares user guide
+### S-013 — Calamares 3.3.14 release
 
-- URL: https://calamares.io/docs/users-guide/
-- Authority: Calamares project documentation
-- Supports: common installer module flow and modular/distribution-configured behavior.
-- Design effects: minimal Phase 2 page sequence and separation of upstream package from Felunyx configuration.
-- Caveat: the guide is user-oriented and older than current releases; exact module configuration must be verified against locked source.
+- URLs: https://calamares.io/news/ and https://github.com/calamares/calamares/releases/tag/v3.3.14
+- Authority: Calamares release publication and archived release mirror
+- Supports: exact release, source SHA-256, signing fingerprint, and release notes.
+- Caveat: GitHub repository is archived; release artifacts remain useful for reproducible source identity while current development is on Codeberg.
 
-### S-013 — Calamares partition guide
+### S-014 — Calamares user, partition, summary, issue and tracking guides
 
-- URL: https://calamares.io/docs/partitions/
-- Authority: Calamares project documentation
-- Supports: automated and manual partition choices; GPT as the modern UEFI path; installer consequences.
-- Design effects: UEFI/GPT required virtual install; manual path not claimed complete; destructive summary.
-- Caveat: exact current KPMCore and module capabilities must be tested.
+- URLs: https://calamares.io/docs/users-guide/, https://calamares.io/docs/partitions/, https://calamares.io/docs/summary/, https://calamares.io/issues/, https://calamares.io/docs/tracking/
+- Authority: Calamares documentation
+- Supports: modular installer flow, pre-destructive summary, diagnostic requirements, optional tracking.
+- Design effects: minimal sequence, no preselected erase, retained logs, no tracking module.
 
-### S-014 — Calamares summary guide
-
-- URL: https://calamares.io/docs/summary/
-- Authority: Calamares project documentation
-- Supports: summary before irreversible changes and final confirmation.
-- Design effects: no preselected erase, complete technical review before formatting.
-- Caveat: Felunyx must verify which details are surfaced by the exact configuration and add branding/modules when needed.
-
-### S-015 — Calamares issue guidance
-
-- URL: https://calamares.io/issues/
-- Authority: Calamares project documentation
-- Supports: diagnostic logs, Calamares and KPMCore versions, ISO/config context, firmware/partition-table details.
-- Design effects: retained session/install logs and complete build/version context in V artifacts.
-- Caveat: current issue tracker location may follow the project migration.
-
-### S-016 — Archived Calamares `partition.conf`
+### S-015 — Archived Calamares `partition.conf`
 
 - URL: https://github.com/calamares/calamares/blob/calamares/src/modules/partition/partition.conf
-- Authority: archived upstream source example
-- Supports historically documented keys for EFI size, partition defaults, GPT/hybrid layout, swap choices, LUKS generation, custom layouts, and initial choice `none`.
-- Design effects: initial policy proposal and checklist for the exact current source review.
-- Caveat: the repository is archived. No key is accepted in implementation until verified against the locked current Codeberg release.
+- Authority: archived upstream example
+- Supports historical keys for EFI sizing, GPT, filesystem choice, swap, LUKS and initial selection.
+- Caveat: every used key must be verified against the locked 3.3.14 source.
 
-### S-017 — Archived Calamares `mount.conf`
+### S-016 — Archived Calamares `mount.conf`
 
 - URL: https://github.com/calamares/calamares/blob/calamares/src/modules/mount/mount.conf
-- Authority: archived upstream source example
-- Supports historically documented Btrfs subvolume list, swap subvolume, EFI `umask=0077`, and `compress=zstd:1` example.
-- Design effects: proposed subvolume and mount policy.
-- Caveat: exact schema and behavior must be verified against the locked current release before implementation.
-
-### S-018 — Calamares tracking documentation
-
-- URL: https://calamares.io/docs/tracking/
-- Authority: Calamares project documentation
-- Supports: tracking is optional and can transmit hardware data/IP only when enabled.
-- Design effects: tracking module is excluded; Phase 2 has no telemetry.
-- Caveat: absence of a module from the UI and execution sequence must be verified in the final config.
+- Authority: archived upstream example
+- Supports Btrfs subvolume list, swap subvolume, EFI `umask=0077`, and `compress=zstd:1` example.
+- Caveat: schema and behavior must be verified against locked source.
 
 ## Implementation-time refresh checklist
 
-Before writing package or installer code, refresh:
+Before publishing the implementation PR, verify and record:
 
-- current `archiso` package and source release;
-- exact `releng` profile content;
-- current Arch Linux Archive snapshot availability;
-- current stable Calamares release on Codeberg;
-- exact Calamares `partition`, `mount`, bootloader, initramfs, unpack, and logging configuration schemas;
-- current KPMCore requirements;
-- current GRUB package behavior on Arch;
-- current GitHub runner labels and resources;
-- current OVMF/QEMU package names in the locked Arch snapshot.
+- immutable Arch OCI base-image digest;
+- exact `releng` 89-1 file inventory and hashes;
+- one viable frozen Archive date containing the complete package set;
+- exact Calamares 3.3.14 build dependencies on the selected Archive date;
+- exact module schemas from the locked source;
+- current GRUB generation behavior on the selected package epoch;
+- current runner image identity and actual free space;
+- exact OVMF/QEMU paths and KVM availability.
 
-A changed source may alter the implementation plan, but it must not silently alter the accepted product requirements.
+A changed source may alter an implementation detail, but it must not silently alter the accepted product requirements.
