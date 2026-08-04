@@ -5,13 +5,16 @@ pkgdesc='Felunyx OS Phase 2 Calamares configuration'
 arch=('any')
 license=('GPL-3.0-or-later')
 depends=('calamares' 'grub' 'efibootmgr' 'btrfs-progs')
-source=('settings.conf' 'partition.conf' 'mount.conf' 'packages.conf' 'bootloader.conf' 'unpackfs.conf' 'services-systemd.conf' 'branding.desc' 'calamares.desktop')
-sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+source=('settings.conf' 'partition.conf' 'mount.conf' 'packages.conf' 'bootloader.conf' 'unpackfs.conf' 'services-systemd.conf' 'initcpiocfg.conf' 'initcpio.conf' 'grub-default' 'branding.desc' 'calamares.desktop' 'preinstall_copy/etc/mkinitcpio.d/linux-zen.preset' 'preinstall_copy/etc/mkinitcpio.d/linux-lts.preset')
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 package() {
   install -Dm0644 "$srcdir/settings.conf" "$pkgdir/etc/calamares/settings.conf"
-  for f in partition.conf mount.conf packages.conf bootloader.conf unpackfs.conf services-systemd.conf; do
+  for f in partition.conf mount.conf packages.conf bootloader.conf unpackfs.conf services-systemd.conf initcpiocfg.conf initcpio.conf; do
     install -Dm0644 "$srcdir/$f" "$pkgdir/etc/calamares/modules/$f"
   done
+  install -Dm0644 "$srcdir/grub-default" "$pkgdir/etc/default/grub"
+  install -Dm0644 "$srcdir/linux-zen.preset" "$pkgdir/etc/calamares/preinstall_copy/etc/mkinitcpio.d/linux-zen.preset"
+  install -Dm0644 "$srcdir/linux-lts.preset" "$pkgdir/etc/calamares/preinstall_copy/etc/mkinitcpio.d/linux-lts.preset"
   install -Dm0644 "$srcdir/branding.desc" "$pkgdir/etc/calamares/branding/felunyx/branding.desc"
   install -Dm0644 "$srcdir/calamares.desktop" "$pkgdir/usr/share/applications/calamares.desktop"
 }
