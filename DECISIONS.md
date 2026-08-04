@@ -174,6 +174,9 @@ Statuses:
 | ID | Status | Decision |
 |---|---|---|
 | D-101 | Accepted | Set activation preserves the current arrangement and opens or reuses additional Set workspaces by default; replacing the current arrangement is an explicit preview choice. |
+| D-102 | Accepted | Validation is divided into Remote (R), Virtual (V), and Hardware (H) gates; every completion claim names the strongest gate actually passed. |
+| D-103 | Accepted | A phase blocked only by an unavailable V or H gate may permit isolated preparatory work for the next phase without marking either phase complete. |
+| D-104 | Accepted | Missing physical access is mitigated through primary-source review, static validation, reference comparison, and explicit pending V/H tests; documentation conformity is never reported as runtime proof. |
 
 ## Changing a decision
 
