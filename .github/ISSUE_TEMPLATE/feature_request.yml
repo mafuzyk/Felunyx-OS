@@ -1,0 +1,48 @@
+name: Feature proposal
+description: Propose a capability that fits the active phase and Felunyx philosophy.
+title: "[Proposal]: "
+labels:
+  - proposal
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user problem without assuming a particular implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed experience
+      description: Explain the normal, failure, and recovery behavior.
+    validations:
+      required: true
+  - type: input
+    id: phase
+    attributes:
+      label: Roadmap phase
+      description: Which ROADMAP.md phase should own this?
+    validations:
+      required: true
+  - type: textarea
+    id: philosophy
+    attributes:
+      label: Philosophy fit
+      description: Which principles or decision IDs support the proposal?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include the simplest acceptable option.
+    validations:
+      required: true
+  - type: textarea
+    id: maintenance
+    attributes:
+      label: Maintenance and upstream impact
+      description: New services, dependencies, forks, formats, or compatibility obligations.
+    validations:
+      required: true

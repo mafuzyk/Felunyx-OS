@@ -1,0 +1,63 @@
+name: Bug report
+description: Report reproducible behavior that contradicts a shipped Felunyx capability.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Felunyx does not have a public release yet. Use this form only for behavior present in a branch, image, or documented prototype.
+  - type: input
+    id: revision
+    attributes:
+      label: Revision or image
+      description: Commit, branch, PR, package version, or ISO identifier.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Include the smallest repeatable sequence and relevant configuration scope.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs and evidence
+      description: Remove credentials, personal data, and secrets.
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      options:
+        - Cosmetic
+        - Workflow blocked
+        - Update or package failure
+        - Boot or recovery failure
+        - Possible data loss
+        - Possible security issue
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety
+      options:
+        - label: I did not include secrets or personal data.
+          required: true
+        - label: This is not an undisclosed security vulnerability.
+          required: true
