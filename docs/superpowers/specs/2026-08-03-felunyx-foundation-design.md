@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-03
 
-**Status:** Written and self-reviewed; awaiting user review
+**Status:** Approved on 2026-08-04
 
 **Scope:** Product constitution, architecture, repository model, and phased delivery strategy
 
@@ -331,6 +331,12 @@ Required categories over the roadmap:
 
 A feature is not complete with happy-path manual verification alone.
 
+### Validation gates
+
+Evidence is classified as Remote (R), Virtual (V), or Hardware (H). A phase declares which gates its promise requires. Passing a weaker gate never implies a stronger one. Work may proceed around a missing physical machine through source review, static validation, and explicit pending tests, but runtime and hardware claims remain blocked until exercised.
+
+A phase blocked only by V or H may permit isolated preparatory work for the next phase. That exception does not mark either phase complete or freeze an unreviewed interface.
+
 ## 16. Security and privacy
 
 - no default telemetry;
@@ -369,4 +375,4 @@ Phase 1 is ready for user review when:
 - placeholder scans pass;
 - a reviewable branch and draft PR exist.
 
-Phase 1 completes only after the user approves the written specification.
+Phase 1 was approved on 2026-08-04 after the R/V/H validation model was added to the project constitution.
