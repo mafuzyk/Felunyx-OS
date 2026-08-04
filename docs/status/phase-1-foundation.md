@@ -23,7 +23,7 @@ Establish a canonical, internally consistent, reviewable foundation before imple
 | Contribution policy | Complete | `CONTRIBUTING.md` |
 | Security posture | Complete | `SECURITY.md` |
 | Foundation design specification | Complete | `docs/superpowers/specs/2026-08-03-felunyx-foundation-design.md` |
-| User review | Pending | Phase boundary gate |
+| User review | Complete | Approved in project review on 2026-08-04 |
 
 ## Validation checklist
 
@@ -38,10 +38,9 @@ Establish a canonical, internally consistent, reviewable foundation before imple
 - [x] Roadmap features are not described as shipped.
 - [x] Placeholder-language scan is clean.
 - [x] Relative Markdown links resolve in the local phase tree.
-- [ ] User approves the written foundation.
+- [x] User approves the written foundation.
+- [x] R/V/H validation-gate policy is accepted and documented.
 
 ## Phase boundary
 
-No Phase 2 implementation plan is written until the user reviews and approves the foundation specification.
-
-Requested changes are made on the foundation branch, followed by another consistency and placeholder scan.
+Phase 1 is approved and complete. Phase 2 may begin through its own design, specification, review, planning, and implementation gates.
