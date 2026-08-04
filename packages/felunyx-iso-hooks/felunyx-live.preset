@@ -1,0 +1,5 @@
+enable NetworkManager.service
+enable sddm.service
+enable felunyx-live-setup.service
+disable sshd.service
+disable sshd.socket

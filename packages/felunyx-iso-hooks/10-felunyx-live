@@ -1,0 +1,2 @@
+Defaults:live !requiretty
+live ALL=(ALL:ALL) NOPASSWD: ALL

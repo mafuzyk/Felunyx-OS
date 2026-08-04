@@ -1,0 +1,21 @@
+pkgname=felunyx-iso-hooks
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Live-media-only policy for Felunyx OS'
+arch=('any')
+license=('GPL-3.0-or-later')
+depends=('sudo' 'sddm' 'networkmanager')
+source=('felunyx-live.conf' 'felunyx-live.tmpfiles' 'felunyx-live.preset' 'sddm-autologin.conf' '10-felunyx-live' 'felunyx-live-setup.service')
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+
+package() {
+  install -Dm0644 "$srcdir/felunyx-live.conf" "$pkgdir/usr/lib/sysusers.d/felunyx-live.conf"
+  install -Dm0644 "$srcdir/felunyx-live.tmpfiles" "$pkgdir/usr/lib/tmpfiles.d/felunyx-live.conf"
+  install -Dm0644 "$srcdir/felunyx-live.preset" "$pkgdir/usr/lib/systemd/system-preset/90-felunyx-live.preset"
+  install -Dm0644 "$srcdir/sddm-autologin.conf" "$pkgdir/etc/sddm.conf.d/10-felunyx-live.conf"
+  install -Dm0440 "$srcdir/10-felunyx-live" "$pkgdir/etc/sudoers.d/10-felunyx-live"
+  install -Dm0644 "$srcdir/felunyx-live-setup.service" "$pkgdir/usr/lib/systemd/system/felunyx-live-setup.service"
+  install -d "$pkgdir/etc/systemd/system"
+  ln -s /dev/null "$pkgdir/etc/systemd/system/sshd.service"
+  ln -s /dev/null "$pkgdir/etc/systemd/system/sshd.socket"
+}
