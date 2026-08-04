@@ -22,12 +22,13 @@ def test_btrfs_layout_and_mounts():
     assert 'compress=zstd:1' in m
     assert 'umask=0077' in m
 
-def test_unpackfs_uses_real_archiso_path_and_replaces_live_presets():
+def test_unpackfs_uses_real_archiso_path_and_target_overlays():
     u=read('unpackfs.conf')
     assert '/run/archiso/bootmnt/felunyx/x86_64/airootfs.sfs' in u
     assert '/run/archiso/airootfs' not in u
-    assert '/etc/mkinitcpio.d/linux-zen.preset' in u
-    assert '/etc/mkinitcpio.d/linux-lts.preset' in u
+    for path in ('/etc/default/grub','/etc/mkinitcpio.d/linux-zen.preset','/etc/mkinitcpio.d/linux-lts.preset'):
+        assert f'- "{path}"' in u
+        assert f'destination: "{path}"' in u
 
 def test_services_systemd_uses_unit_action_schema():
     s=read('services-systemd.conf')
@@ -45,6 +46,14 @@ def test_live_package_removed_and_grub_schema_is_real():
     grub=read('grub-default')
     assert 'GRUB_TOP_LEVEL=/boot/vmlinuz-linux-zen' in grub
 
+def test_grub_template_is_applied_by_installer_not_owned_by_config_package():
+    p=Path('packages/felunyx-calamares-config/PKGBUILD').read_text()
+    assert '"$pkgdir/etc/default/grub"' not in p
+    assert '"$pkgdir/etc/calamares/preinstall_copy/etc/default/grub"' in p
+    u=read('unpackfs.conf')
+    assert 'source: "/etc/calamares/preinstall_copy/etc/default/grub"' in u
+    assert 'destination: "/etc/default/grub"' in u
+
 def test_calamares_presets_are_local_makepkg_sources():
     package=Path('packages/felunyx-calamares-config')
     p=(package/'PKGBUILD').read_text()
@@ -54,6 +63,16 @@ def test_calamares_presets_are_local_makepkg_sources():
         assert f"'{preset}'" in source_line
         assert f'preinstall_copy/etc/mkinitcpio.d/{preset}' not in source_line
         assert f'"$srcdir/{preset}"' in p
+
+def test_launcher_is_owned_and_branded_by_calamares_package():
+    framework=Path('packages/calamares/PKGBUILD').read_text()
+    config=Path('packages/felunyx-calamares-config/PKGBUILD').read_text()
+    assert "'felunyx-calamares.desktop'" in framework
+    assert '"$pkgdir/usr/share/applications/calamares.desktop"' in framework
+    assert '"$pkgdir/usr/share/applications/calamares.desktop"' not in config
+    desktop=Path('packages/calamares/felunyx-calamares.desktop').read_text()
+    assert 'Name=Install Felunyx OS' in desktop
+    assert 'Exec=pkexec calamares' in desktop
 
 def test_calamares_source_is_fixed_and_signed():
     p=Path('packages/calamares/PKGBUILD').read_text()
