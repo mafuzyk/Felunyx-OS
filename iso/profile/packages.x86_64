@@ -22,7 +22,9 @@ linux-lts
 linux-zen
 mkinitcpio
 mkinitcpio-archiso
+mkinitcpio-nfs-utils
 mtools
+nbd
 networkmanager
 noto-fonts
 plasma-meta
