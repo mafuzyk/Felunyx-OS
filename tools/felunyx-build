@@ -17,11 +17,25 @@ cleanup(){ local rc=$?; if [[ $keep_work == true || $rc -ne 0 ]]; then felunyx_l
 trap cleanup EXIT INT TERM
 if [[ $mode == frozen ]]; then mirror="https://archive.archlinux.org/repos/${archive_date}/\$repo/os/\$arch"; else mirror='https://geo.mirror.pkgbuild.com/$repo/os/$arch'; archive_date=current; fi
 repo_uri="file://$repo"
-python3 - "$profile/pacman.conf" "$repo_uri" "$mirror" <<'PY'
+bootstrap_pacman_conf="$work/pacman-bootstrap.conf"
+pacman_wrapper="$work/felunyx-pacman"
+python3 - "$profile/pacman.conf" "$repo_uri" "$mirror" "$bootstrap_pacman_conf" <<'PY'
 from pathlib import Path
 import sys
 p=Path(sys.argv[1]); text=p.read_text(); assert text.count('@FELUNYX_REPO_URI@') == 1
-p.write_text(text.replace('@FELUNYX_REPO_URI@',sys.argv[2]).replace('Include = /etc/pacman.d/mirrorlist',f'Server = {sys.argv[3]}'))
+resolved=text.replace('@FELUNYX_REPO_URI@',sys.argv[2]).replace('Include = /etc/pacman.d/mirrorlist',f'Server = {sys.argv[3]}')
+p.write_text(resolved)
+bootstrap=[]; skipping=False
+for line in resolved.splitlines(keepends=True):
+    section=line.strip()
+    if section == '[felunyx]':
+        skipping=True
+        continue
+    if skipping and section.startswith('[') and section.endswith(']'):
+        skipping=False
+    if not skipping:
+        bootstrap.append(line)
+Path(sys.argv[4]).write_text(''.join(bootstrap))
 PY
 mkdir -p "$profile/airootfs/etc/pacman.d"; printf 'Server = %s\n' "$mirror" > "$profile/airootfs/etc/pacman.d/mirrorlist"
 commit=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf unknown); epoch=${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" show -s --format=%ct HEAD 2>/dev/null || date +%s)}
@@ -36,8 +50,16 @@ if [[ $dry_run == true ]]; then mkdir -p "$output"; cp "$stage/build-plan.json" 
 for cmd in mkarchiso makepkg repo-add runuser pacman python3 sha256sum gpg jq; do felunyx_require_command "$cmd"; done
 "$ROOT/tools/felunyx-preflight" --json "$stage/preflight.json"
 builder=felunyx-builder; if ! id "$builder" >/dev/null 2>&1; then useradd --create-home --shell /bin/bash "$builder"; fi
-install -d -o "$builder" -g "$builder" "$work/pkgwork" "$repo"; printf '%s ALL=(ALL) NOPASSWD: /usr/bin/pacman\n' "$builder" > /etc/sudoers.d/felunyx-builder; chmod 0440 /etc/sudoers.d/felunyx-builder
-build_package(){ local name=$1 src="$ROOT/packages/$1" dst="$work/pkgwork/$1"; cp -a "$src" "$dst"; chown -R "$builder:$builder" "$dst"; runuser -u "$builder" -- env SOURCE_DATE_EPOCH="$epoch" FELUNYX_SOURCE_COMMIT="$commit" FELUNYX_ARCHIVE_DATE="$archive_date" bash -lc "cd '$dst' && makepkg --syncdeps --noconfirm --cleanbuild --clean"; find "$dst" -maxdepth 1 -type f -name '*.pkg.tar.*' ! -name '*.sig' -exec cp -t "$repo" {} +; }
+install -d -o "$builder" -g "$builder" "$work/pkgwork" "$repo"
+build_package(){
+  local src="$ROOT/packages/$1" dst="$work/pkgwork/$1"
+  cp -a "$src" "$dst"
+  chown -R "$builder:$builder" "$dst"
+  runuser -u "$builder" -- env PACMAN="$pacman_wrapper" SOURCE_DATE_EPOCH="$epoch" FELUNYX_SOURCE_COMMIT="$commit" FELUNYX_ARCHIVE_DATE="$archive_date" bash -lc "cd '$dst' && makepkg --syncdeps --noconfirm --cleanbuild --clean"
+  find "$dst" -maxdepth 1 -type f -name '*.pkg.tar.*' ! -name '*.sig' -exec cp -t "$repo" {} +
+  repo-add "$repo/felunyx.db.tar.zst" "$repo"/*.pkg.tar.*
+  "$pacman_wrapper" --sync --refresh --noconfirm
+}
 environment_lock="$ROOT/build/environment.lock.json"
 release_certificate_path=$(jq -er '.calamares.release_certificate_path' "$environment_lock")
 release_certificate_sha256=$(jq -er '.calamares.release_certificate_sha256' "$environment_lock")
@@ -54,6 +76,19 @@ install -m 0644 "$key_source" "$key_bundle"
 chown "$builder:$(id -g "$builder")" "$key_bundle"
 export GNUPGHOME="$work/gnupg"
 felunyx_prepare_builder_private_dir "$work" "$GNUPGHOME" "$builder" "$(id -g "$builder")"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -Eeuo pipefail' \
+  "if [[ -e '$repo/felunyx.db' ]]; then" \
+  "  pacman_config='$profile/pacman.conf'" \
+  'else' \
+  "  pacman_config='$bootstrap_pacman_conf'" \
+  'fi' \
+  'exec /usr/bin/pacman --config "$pacman_config" "$@"' > "$pacman_wrapper"
+chmod 0755 "$pacman_wrapper"
+echo "$builder ALL=(root) NOPASSWD: $pacman_wrapper" > /etc/sudoers.d/felunyx-builder
+chmod 0440 /etc/sudoers.d/felunyx-builder
+"$pacman_wrapper" --sync --refresh --noconfirm
 runuser -u "$builder" -- gpg --batch --import-options import-minimal --import "$key_bundle"
 mapfile -t release_fingerprints < <(runuser -u "$builder" -- gpg --batch --with-colons --with-subkey-fingerprint --list-keys "$release_primary_fingerprint" | awk -F: '$1=="fpr" {print $10}')
 printf '%s\n' "${release_fingerprints[@]}" | grep -Fxq "$release_primary_fingerprint" || felunyx_die 'Calamares release primary-key fingerprint mismatch'
@@ -68,7 +103,6 @@ with open(sys.argv[1],'w') as f:
  json.dump({"schema":1,"source":sys.argv[2],"bundle_sha256":sys.argv[3],"primary_key_fingerprint":sys.argv[4],"required_signing_subkey_fingerprint":sys.argv[5],"uid_count":int(sys.argv[6]),"certificate_fingerprints":sys.argv[7].split()},f,indent=2,sort_keys=True); f.write('\n')
 PY
 for pkg in calamares felunyx-identity felunyx-iso-hooks felunyx-calamares-config; do build_package "$pkg"; done
-repo-add "$repo/felunyx.db.tar.zst" "$repo"/*.pkg.tar.*
 "$ROOT/tools/felunyx-validate" --profile "$profile" --report "$stage/profile-validation.json"
 exec > >(tee "$work/build.log") 2>&1; mkarchiso -v -w "$work/archiso" -o "$out" "$profile"
 iso=$(find "$out" -maxdepth 1 -type f -name '*.iso' -print -quit); [[ -n $iso ]] || felunyx_die 'mkarchiso completed without an ISO artifact'
