@@ -19,3 +19,13 @@ def test_local_repository_is_indexed_after_each_package_build():
     build_package=script.split('build_package(){',1)[1].split('environment_lock=',1)[0]
     assert 'repo-add' in build_package
     assert build_package.index('cp -t "$repo"') < build_package.index('repo-add')
+    assert build_package.index('repo-add') < build_package.index('--sync --refresh')
+
+def test_makepkg_resolves_dependencies_through_the_isolated_build_repositories():
+    script=Path('tools/felunyx-build').read_text()
+    build_package=script.split('build_package(){',1)[1].split('environment_lock=',1)[0]
+    assert 'bootstrap_pacman_conf=' in script
+    assert 'pacman_wrapper=' in script
+    assert 'PACMAN="$pacman_wrapper"' in build_package
+    assert 'exec /usr/bin/pacman --config "$pacman_config" "$@"' in script
+    assert 'NOPASSWD: $pacman_wrapper' in script
