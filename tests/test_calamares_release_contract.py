@@ -19,6 +19,13 @@ def test_calamares_pkgbuild_uses_the_published_asc_signature_and_primary_key():
     assert SIGNING_SUBKEY_FINGERPRINT not in pkgbuild.split("validpgpkeys=", 1)[1]
 
 
+def test_calamares_pkgbuild_declares_qt_linguist_build_tools():
+    pkgbuild = Path("packages/calamares/PKGBUILD").read_text()
+    makedepends = pkgbuild.split("makedepends=(", 1)[1].split(")", 1)[0]
+
+    assert "'qt6-tools'" in makedepends
+
+
 def test_environment_lock_pins_the_vendored_release_certificate_and_provenance():
     lock = json.loads(Path("build/environment.lock.json").read_text())
     calamares = lock["calamares"]
