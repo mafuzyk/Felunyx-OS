@@ -42,6 +42,7 @@ Root documents define the project-wide contract:
 ## Research
 
 - [Phase 2 source ledger](research/phase-2-source-ledger.md)
+- [Work Environments feasibility source ledger](research/work-environments-source-ledger.md)
 
 ## Status
 
