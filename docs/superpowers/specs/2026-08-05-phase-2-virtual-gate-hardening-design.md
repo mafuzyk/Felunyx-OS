@@ -38,7 +38,7 @@ The Phase 2 plan additionally requires semantic kernel selection, observable gra
 The current implementation has useful foundations but does not yet satisfy the full contract:
 
 1. `felunyx-evidence` reports graphical target, SDDM, NetworkManager, kernel, live state, identity, and SSH state.
-2. `expect_serial.py` currently rejects wrong identity, kernel, live state, or active SSH, but does not require graphical target, SDDM, NetworkManager, or Plasma Wayland availability.
+2. `expect_serial.py` currently rejects wrong identity, kernel, live state, or active SSH, but does not require graphical target, SDDM, NetworkManager, or an active Plasma Wayland session.
 3. Live LTS selection currently waits two seconds and sends `down` and `ret` through QMP. This depends on menu timing and ordering rather than an explicit entry identifier.
 4. Installed boots verify only the generic serial marker and running kernel. They do not prove installed GRUB, both kernel payloads, exact Btrfs layout, build metadata, or absence of live-only policy.
 5. The workflow groups multiple scenarios into large steps and uploads only matching log files. One early failure can prevent later scenarios and omit useful non-log evidence.
@@ -80,7 +80,7 @@ Advantages:
 Disadvantages:
 
 - requires a new ISO build when guest-side evidence changes;
-- adds focused test code and a small executor dependency for editing OVMF variables.
+- adds focused test code and one host-side executor package for editing OVMF variables.
 
 **Decision:** selected.
 
@@ -115,35 +115,50 @@ Common required fields:
 - running kernel and normalized variant (`zen` or `lts`);
 - `live` state;
 - `graphical_target`;
-- `sddm`;
-- Plasma Wayland session availability;
+- SDDM service state;
 - NetworkManager state;
 - SSH service and socket state;
 - boot mode identified as UEFI for required scenarios.
+
+Live evidence additionally records the active logind session selected for the live user, including session ID, user, state, type, class, service, desktop, and remote status, plus whether `plasmashell` is running in that session.
 
 Live assertions require:
 
 - `live: true`;
 - graphical target active;
 - SDDM active;
-- Plasma Wayland session definition and executable available;
+- an active, local, graphical logind session for the live user;
+- session type `wayland`;
+- SDDM as the login service and Plasma/KDE as the declared desktop;
+- `plasmashell` running for that session;
 - NetworkManager active;
 - SSH service and socket inactive;
 - requested kernel variant running.
+
+The collector waits for this live-session readiness up to the scenario timeout instead of emitting success immediately when only `graphical.target` becomes active. Missing session readiness is a failed scenario with retained diagnostics.
 
 Installed assertions require:
 
 - `live: false`;
 - requested kernel variant running;
-- GRUB package and generated configuration present;
-- Linux Zen and Linux LTS kernel payloads present;
-- expected build metadata present;
-- live marker absent;
+- graphical target and SDDM greeter active, without live autologin;
+- GRUB package and `/boot/grub/grub.cfg` present;
+- `/boot/vmlinuz-linux-zen` and `/boot/vmlinuz-linux-lts` present;
+- expected Felunyx build metadata present;
+- `/run/felunyx/live` absent;
 - live-only sudo and SDDM autologin policy absent;
 - `felunyx-iso-hooks` absent from the installed package set;
 - SSH service and socket inactive;
-- exact Btrfs subvolumes and mount points present;
-- required Btrfs and EFI mount options observable.
+- exact Btrfs subvolumes and mount points present:
+  - `@` mounted at `/`;
+  - `@home` mounted at `/home`;
+  - `@snapshots` mounted at `/.snapshots`;
+  - `@cache` mounted at `/var/cache`;
+  - `@log` mounted at `/var/log`;
+  - `@swap` validated only when swap was created;
+- Btrfs mounts include `compress=zstd:1`;
+- the ESP is mounted at `/boot/efi` with `umask=0077`;
+- a present `@swap` uses the approved swap mount policy.
 
 Missing fields, unknown values, malformed JSON, timeout, or mismatched expectations fail the scenario. They are never interpreted as pass.
 
@@ -156,9 +171,11 @@ For each VM invocation it creates a fresh writable copy of the OVMF variable sto
 - Zen: `felunyx-linux-zen.conf` when explicit selection is required;
 - LTS: `felunyx-linux-lts.conf`.
 
-The implementation uses the standard `LoaderEntryOneShot` variable in the systemd boot-loader vendor namespace. The helper must read back the modified variable store and confirm the requested identifier before QEMU launches.
+The implementation uses the standard `LoaderEntryOneShot` variable in the systemd boot-loader vendor namespace. The host invokes Ubuntu 24.04's `virt-fw-vars` command from `python3-virt-firmware` as a separate process; the package is not added to the ISO and no library code is vendored or imported into Felunyx. The workflow records the installed package/tool version in scenario evidence.
 
-If the pinned executor cannot create and verify the one-shot variable, the scenario is `blocked` and the workflow fails. It must not fall back silently to timed arrow keys.
+The helper writes the variable to the copied store, reads the store back, and confirms the exact requested entry identifier before QEMU launches.
+
+If the pinned executor cannot install the declared package or cannot create and verify the one-shot variable, the scenario is `blocked` and the workflow fails. It must not fall back silently to timed arrow keys.
 
 The guest serial evidence must still confirm the running kernel. Variable injection alone is not success.
 
@@ -178,7 +195,7 @@ The inspector collects read-only evidence using system interfaces and package me
 - systemd states for SDDM, NetworkManager, SSH service, and SSH socket;
 - absence of live-only files, package, sudo policy, and autologin configuration.
 
-The host-side assertion validates exact expected values and writes the parsed JSON into the scenario artifact directory.
+The host-side assertion validates the exact values in section 5.1 and writes the parsed JSON into the scenario artifact directory.
 
 The inspector performs no repair and changes no guest state.
 
@@ -186,7 +203,9 @@ The inspector performs no repair and changes no guest state.
 
 Normal installation remains driven through stable AT-SPI object names. Coordinate clicking remains forbidden.
 
-A separate explicit fw_cfg test marker enables failure injection. In that mode the harness uses a test-only Calamares configuration overlay containing a deterministic failing execution step after logs and target context exist but before success can be reported.
+A separate explicit fw_cfg test marker enables failure injection. In that mode the live-only test harness selects a test-only Calamares configuration overlay containing a deterministic failing execution step after logs and target context exist but before success can be reported.
+
+The overlay is inert without the marker, is excluded from the installed target, does not replace the normal Calamares configuration, and is covered by static tests proving that the ordinary installation path cannot enable it accidentally.
 
 The failure scenario passes only when all of these are true:
 
@@ -218,9 +237,11 @@ The workflow uploads:
 - serial logs;
 - QEMU stderr and QMP diagnostics;
 - parsed live and installed JSON evidence;
+- logind and process diagnostics for the live session;
 - installer and accessibility-harness logs;
 - Btrfs and mount reports;
 - failure-injection evidence;
+- executor package/tool versions;
 - final gate summary JSON.
 
 BIOS remains pass/fail/not-run and cannot change the required UEFI result.
@@ -257,10 +278,11 @@ Implementation follows tests first or alongside each change.
 Static tests will require:
 
 - schema 2 fields and strict live/installed assertions;
-- rejection of missing graphical, SDDM, Plasma, NetworkManager, GRUB, kernel, Btrfs, metadata, or policy evidence;
+- rejection of missing graphical, SDDM, active Wayland session, Plasma process, NetworkManager, GRUB, kernel, Btrfs, metadata, or policy evidence;
 - no timed `sleep 2` plus `down`/`ret` LTS selection path;
-- verified one-shot entry IDs;
+- verified one-shot entry IDs and read-back;
 - exact installed Btrfs subvolume and mount expectations;
+- failure-injection isolation from the ordinary installer path;
 - retained controlled-failure evidence and no false success marker;
 - independent workflow scenarios plus final outcome summary;
 - pinned third-party actions and read-only permissions;
