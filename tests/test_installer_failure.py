@@ -5,11 +5,13 @@ import importlib.util
 from pathlib import Path
 
 PRODUCTION = Path("packages/felunyx-calamares-config/settings.conf")
-OVERLAY = Path("packages/felunyx-iso-hooks/calamares-failure")
-FAILURE_SETTINGS = OVERLAY / "settings.conf"
-FAILURE_MODULE = OVERLAY / "modules" / "felunyx-fail"
+PKG_DIR = Path("packages/felunyx-iso-hooks")
+FAILURE_SETTINGS = PKG_DIR / "calamares-failure-settings.conf"
+FAILURE_DESCRIPTOR = PKG_DIR / "felunyx-fail-module.desc"
+FAILURE_MAIN = PKG_DIR / "felunyx-fail-main.py"
 DRIVER = Path("packages/felunyx-iso-hooks/drive-installation.py")
 PKGBUILD = Path("packages/felunyx-iso-hooks/PKGBUILD")
+INSTALLED_OVERLAY = "/usr/lib/felunyx/tests/calamares-failure"
 
 
 def exec_sequence(text: str) -> list[str]:
@@ -34,7 +36,7 @@ def test_failure_overlay_inserts_one_module_without_changing_production():
 
     assert failure_exec == expected
     assert failure_exec[-1] == "umount"
-    assert "/usr/lib/felunyx/tests/calamares-failure/modules" in failure
+    assert f"{INSTALLED_OVERLAY}/modules" in failure
     assert "/usr/lib/calamares/modules" in failure
     for shared in (
         "show: [ welcome, locale, keyboard, partition, users, summary ]",
@@ -49,9 +51,7 @@ def test_failure_overlay_inserts_one_module_without_changing_production():
 
 
 def test_failure_module_has_explicit_python_job_contract():
-    descriptor = (FAILURE_MODULE / "module.desc").read_text(
-        encoding="utf-8"
-    )
+    descriptor = FAILURE_DESCRIPTOR.read_text(encoding="utf-8")
     for required in (
         "type: job",
         "name: felunyx-fail",
@@ -61,8 +61,9 @@ def test_failure_module_has_explicit_python_job_contract():
     ):
         assert required in descriptor
 
-    main_path = FAILURE_MODULE / "main.py"
-    spec = importlib.util.spec_from_file_location("felunyx_fail", main_path)
+    spec = importlib.util.spec_from_file_location(
+        "felunyx_fail", FAILURE_MAIN
+    )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -75,18 +76,18 @@ def test_failure_module_has_explicit_python_job_contract():
 def test_failure_overlay_is_packaged_outside_production_config():
     text = PKGBUILD.read_text(encoding="utf-8")
     for source in (
-        "calamares-failure/settings.conf",
-        "calamares-failure/modules/felunyx-fail/module.desc",
-        "calamares-failure/modules/felunyx-fail/main.py",
+        "calamares-failure-settings.conf",
+        "felunyx-fail-module.desc",
+        "felunyx-fail-main.py",
     ):
         assert source in text
-    assert "/usr/lib/felunyx/tests/calamares-failure/settings.conf" in text
+    assert f"{INSTALLED_OVERLAY}/settings.conf" in text
     assert (
-        "/usr/lib/felunyx/tests/calamares-failure/modules/"
+        f"{INSTALLED_OVERLAY}/modules/"
         "felunyx-fail/module.desc"
     ) in text
     assert (
-        "/usr/lib/felunyx/tests/calamares-failure/modules/"
+        f"{INSTALLED_OVERLAY}/modules/"
         "felunyx-fail/main.py"
     ) in text
     assert '"$pkgdir/etc/calamares/settings.conf"' not in text
@@ -97,7 +98,7 @@ def test_installer_driver_classifies_expected_failure_and_retains_logs():
     for required in (
         "opt/felunyx/install-mode/raw",
         "{'success', 'failure'}",
-        "/usr/lib/felunyx/tests/calamares-failure/settings.conf",
+        f"{INSTALLED_OVERLAY}/settings.conf",
         "'-c'",
         "FelunyxInjectedFailure",
         "/run/felunyx/installer-evidence",

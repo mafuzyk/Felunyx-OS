@@ -5,7 +5,7 @@ pkgdesc='Live-media-only policy for Felunyx OS'
 arch=('any')
 license=('GPL-3.0-or-later')
 depends=('sudo' 'sddm' 'networkmanager')
-source=('felunyx-live.conf' 'felunyx-live.tmpfiles' 'felunyx-live.preset' 'sddm-autologin.conf' '10-felunyx-live' 'felunyx-live-setup.service' 'drive-installation.py' 'felunyx-autoinstall.desktop' 'calamares-failure/settings.conf' 'calamares-failure/modules/felunyx-fail/module.desc' 'calamares-failure/modules/felunyx-fail/main.py')
+source=('felunyx-live.conf' 'felunyx-live.tmpfiles' 'felunyx-live.preset' 'sddm-autologin.conf' '10-felunyx-live' 'felunyx-live-setup.service' 'drive-installation.py' 'felunyx-autoinstall.desktop' 'calamares-failure-settings.conf' 'felunyx-fail-module.desc' 'felunyx-fail-main.py')
 sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 package() {
@@ -17,9 +17,9 @@ package() {
   install -Dm0755 "$srcdir/drive-installation.py" "$pkgdir/usr/lib/felunyx/tests/drive-installation.py"
   install -Dm0644 "$srcdir/felunyx-autoinstall.desktop" "$pkgdir/etc/xdg/autostart/felunyx-autoinstall.desktop"
   install -Dm0644 "$srcdir/felunyx-live-setup.service" "$pkgdir/usr/lib/systemd/system/felunyx-live-setup.service"
-  install -Dm0644 "$srcdir/settings.conf" "$pkgdir/usr/lib/felunyx/tests/calamares-failure/settings.conf"
-  install -Dm0644 "$srcdir/module.desc" "$pkgdir/usr/lib/felunyx/tests/calamares-failure/modules/felunyx-fail/module.desc"
-  install -Dm0644 "$srcdir/main.py" "$pkgdir/usr/lib/felunyx/tests/calamares-failure/modules/felunyx-fail/main.py"
+  install -Dm0644 "$srcdir/calamares-failure-settings.conf" "$pkgdir/usr/lib/felunyx/tests/calamares-failure/settings.conf"
+  install -Dm0644 "$srcdir/felunyx-fail-module.desc" "$pkgdir/usr/lib/felunyx/tests/calamares-failure/modules/felunyx-fail/module.desc"
+  install -Dm0644 "$srcdir/felunyx-fail-main.py" "$pkgdir/usr/lib/felunyx/tests/calamares-failure/modules/felunyx-fail/main.py"
   install -d "$pkgdir/etc/systemd/system"
   ln -s /dev/null "$pkgdir/etc/systemd/system/sshd.service"
   ln -s /dev/null "$pkgdir/etc/systemd/system/sshd.socket"

@@ -422,9 +422,9 @@ git commit -m "test: select installed LTS through GRUB one-shot state"
 ### Task 5: Add Deterministic Calamares Failure Injection
 
 **Files:**
-- Create: `packages/felunyx-iso-hooks/calamares-failure/settings.conf`
-- Create: `packages/felunyx-iso-hooks/calamares-failure/modules/felunyx-fail/module.desc`
-- Create: `packages/felunyx-iso-hooks/calamares-failure/modules/felunyx-fail/main.py`
+- Create: `packages/felunyx-iso-hooks/calamares-failure-settings.conf`
+- Create: `packages/felunyx-iso-hooks/felunyx-fail-module.desc`
+- Create: `packages/felunyx-iso-hooks/felunyx-fail-main.py`
 - Modify: `packages/felunyx-iso-hooks/PKGBUILD`
 - Modify: `packages/felunyx-iso-hooks/drive-installation.py`
 - Modify: `tests/test_virtual_harness.py`
@@ -433,6 +433,7 @@ git commit -m "test: select installed LTS through GRUB one-shot state"
 - fw_cfg `opt/felunyx/install-mode` has exact values `success` and `failure`.
 - Installer events are `start`, `stage`, `success`, `failure`, and `blocked`.
 - Failure class is exactly `FelunyxInjectedFailure`.
+- makepkg only resolves local package sources by basename in the package directory, so the overlay sources must be flat files beside the PKGBUILD. Their installed target remains below `/usr/lib/felunyx/tests/calamares-failure/`.
 
 - [ ] **Step 1: Write failing configuration and event tests**
 
