@@ -23,3 +23,10 @@ def test_build_failure_preserves_full_container_log_and_exit_status():
     assert 'tee artifacts/workflow-build.log' in text
     assert 'build_status=${PIPESTATUS[0]}' in text
     assert 'exit "$build_status"' in text
+
+
+def test_virtual_executor_pins_ovmf_variable_tooling_and_records_version():
+    text = workflow('virtual-smoke.yml')
+    assert 'python3-virt-firmware' in text
+    assert "dpkg-query -W -f='${Version}\\n' python3-virt-firmware" in text
+    assert 'virtual/executor-packages.txt' in text
