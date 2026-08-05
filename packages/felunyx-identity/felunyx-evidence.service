@@ -1,10 +1,12 @@
 [Unit]
 Description=Emit Felunyx virtual validation evidence
-After=multi-user.target display-manager.service
+Wants=display-manager.service
+After=display-manager.service
 
 [Service]
 Type=oneshot
+TimeoutStartSec=150s
 ExecStart=/usr/lib/felunyx/felunyx-evidence
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=graphical.target
