@@ -84,10 +84,13 @@ def test_guest_live_collector_declares_schema2_session_state():
     ):
         assert required in text
 
+
+def test_evidence_service_avoids_graphical_target_ordering_cycle():
     unit = Path(
         "packages/felunyx-identity/felunyx-evidence.service"
     ).read_text(encoding="utf-8")
-    assert "After=graphical.target display-manager.service" in unit
+    assert "After=display-manager.service" in unit
+    assert "After=graphical.target" not in unit
     assert "Wants=display-manager.service" in unit
     assert "WantedBy=graphical.target" in unit
 
