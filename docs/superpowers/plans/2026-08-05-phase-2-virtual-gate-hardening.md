@@ -4,9 +4,9 @@
 
 **Goal:** Make a successful Phase 2 virtual-smoke run prove the required UEFI live, installation, installed-system, storage, fallback-kernel, and retained-failure properties without timing-dependent input or false success.
 
-**Architecture:** Guest-side collectors emit versioned, read-only JSON evidence over serial only when explicit QEMU fw_cfg markers enable testing. Host-side tools select systemd-boot entries through a verified `LoaderEntryOneShot` OVMF variable, launch isolated scenarios, validate strict live or installed schemas, and preserve all evidence. GitHub Actions runs every required scenario independently and a final fail-closed summary determines the Virtual gate result.
+**Architecture:** Guest-side collectors emit versioned, read-only JSON evidence over serial only when explicit QEMU fw_cfg markers enable testing. Host-side tools select live systemd-boot entries through a verified `LoaderEntryOneShot` OVMF variable. The installed Zen boot validates the target and may prepare one explicit GRUB one-shot LTS boot through a verified menu-entry ID. GitHub Actions runs every required scenario independently and a final fail-closed summary determines the Virtual gate result.
 
-**Tech Stack:** Bash 5, Python 3 standard library, systemd/systemd-boot Boot Loader Interface, QEMU, OVMF, `python3-virt-firmware` / `virt-fw-vars` 24.1.1-2 on Ubuntu 24.04, Calamares 3.3.14, AT-SPI, GRUB, Btrfs, pytest, GitHub Actions.
+**Tech Stack:** Bash 5, Python 3 standard library, systemd/systemd-boot Boot Loader Interface, QEMU, OVMF, `python3-virt-firmware` / `virt-fw-vars` 24.1.1-2 on Ubuntu 24.04, GRUB, Calamares 3.3.14, AT-SPI, Btrfs, pytest, GitHub Actions.
 
 ## Global Constraints
 
@@ -19,8 +19,8 @@
 - Expected mounts are `/`, `/home`, `/.snapshots`, `/var/cache`, `/var/log`, and `/boot/efi`.
 - Btrfs uses `defaults,compress=zstd:1`; EFI uses `defaults,umask=0077`.
 - Plasma Wayland must be observed as an active user session; installed files alone are insufficient.
-- No coordinate clicking, translated-title matching, timed menu arrows, or silent fallback is allowed.
-- Test evidence is opt-in through explicit fw_cfg markers and is not a public API.
+- No coordinate clicking, translated-title matching, menu-index matching, timed menu arrows, or silent fallback is allowed.
+- Test evidence and one-shot preparation are opt-in through explicit fw_cfg markers and are not public APIs.
 - Missing, malformed, skipped, cancelled, blocked, or unrecorded required evidence is never pass.
 - Static tests establish only Remote evidence; Virtual remains pending until a matching rebuilt ISO runs successfully and artifacts are reviewed.
 - The existing run `30951476281` and its ISO remain unchanged and cannot inherit future validation retroactively.
@@ -38,17 +38,16 @@
 - Create: `tests/fixtures/evidence/live-missing-plasma.json`
 
 **Interfaces:**
-- Produces serial line `FELUNYX_EVIDENCE=<json>` with `schema: 2`.
-- Produces `collect_sessions() -> list[dict[str, object]]` inside `felunyx-evidence`.
-- `expect_serial.py` accepts `--mode live|installed`, `--kernel zen|lts`, and writes the validated payload with `--output PATH`.
+- Produces serial line `FELUNYX_EVIDENCE=<json>` with `schema: 2` only when `/run/felunyx/live` exists.
+- `expect_serial.py --log PATH --kernel zen|lts --output PATH --timeout N` validates live evidence and writes canonical JSON atomically.
 
 - [ ] **Step 1: Write failing strict-schema tests**
 
-Add tests that load fixtures and require rejection when any of these is absent or false in live mode: `uefi`, `graphical_target`, `sddm`, `networkmanager`, `plasma_wayland_available`, or one active local user session whose `type` is `wayland` and whose `desktop` contains `KDE` or `plasma` case-insensitively.
+Add a helper that feeds fixture lines to `expect_serial.py`. Require rejection when any of these is absent or false: `uefi`, `graphical_target`, `sddm`, `networkmanager`, `plasma_wayland_available`, or an active local Plasma Wayland session.
 
 ```python
 def test_live_evidence_requires_active_plasma_wayland(tmp_path):
-    result = run_expect("live-missing-plasma.json", "live", "zen", tmp_path)
+    result = run_live_fixture("live-missing-plasma.json", "zen", tmp_path)
     assert result.returncode != 0
     assert "active Plasma Wayland session" in result.stderr
 ```
@@ -57,53 +56,69 @@ def test_live_evidence_requires_active_plasma_wayland(tmp_path):
 
 Run: `python3 -m pytest -q tests/test_virtual_harness.py -k 'live_evidence or plasma'`
 
-Expected: FAIL because schema 1 has no strict mode, active-session evidence, or output file.
+Expected: FAIL because schema 1 has no active-session evidence or output file.
 
 - [ ] **Step 3: Implement schema 2 collection**
 
-Collect:
+The emitted object must have exactly these required properties:
 
 ```python
-{
+required = {
     "schema": 2,
     "id": "felunyx",
     "build_metadata": Path("/usr/lib/felunyx/build-info.json").is_file(),
-    "kernel": uname,
-    "kernel_variant": variant,
-    "live": Path("/run/felunyx/live").exists(),
+    "kernel": subprocess.check_output(["uname", "-r"], text=True).strip(),
+    "kernel_variant": kernel_variant,
+    "live": True,
     "uefi": Path("/sys/firmware/efi").is_dir(),
     "graphical_target": active("graphical.target"),
     "sddm": active("sddm.service"),
     "networkmanager": active("NetworkManager.service"),
     "plasma_wayland_available": Path("/usr/share/wayland-sessions/plasma.desktop").is_file(),
-    "sessions": collect_sessions(),
+    "sessions": sessions,
     "sshd_service_active": active("sshd.service"),
     "sshd_socket_active": active("sshd.socket"),
 }
 ```
 
-Implement `collect_sessions()` using `loginctl list-sessions --no-legend --no-pager`, then `loginctl show-session ID -p Name -p Class -p Type -p Desktop -p Active -p Remote --value` or individual property calls. A session qualifies only when `Class=user`, `Type=wayland`, `Active=yes`, `Remote=no`, and desktop is KDE/Plasma.
+Build `sessions` by listing session IDs with `loginctl list-sessions --no-legend --no-pager`, then querying `Name`, `Class`, `Type`, `Desktop`, `Active`, and `Remote` with one `loginctl show-session` call per session. A qualifying session has `Class=user`, `Type=wayland`, `Active=yes`, `Remote=no`, and `Desktop` containing `KDE` or `plasma` case-insensitively.
 
-Change the service ordering to:
+Change service ordering to:
 
 ```ini
 After=graphical.target display-manager.service
 Wants=display-manager.service
 ```
 
-The collector may wait up to 120 seconds for the qualifying session, but must emit the final observed state rather than manufacture success.
+Wait at most 120 seconds for a qualifying session. On timeout, emit the final observed state; do not replace false fields with true values.
 
 - [ ] **Step 4: Implement strict host validation**
 
-Refactor `expect_serial.py` into pure validation helpers:
+Use concrete validation helpers:
 
 ```python
-def validate_common(data: dict, kernel: str) -> None: ...
-def validate_live(data: dict) -> None: ...
-def validate_installed(data: dict) -> None: ...
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
+
+
+def validate_live(data: dict, kernel: str) -> None:
+    require(data.get("schema") == 2, "live evidence schema must be 2")
+    require(data.get("id") == "felunyx", "guest identity is not Felunyx")
+    require(data.get("kernel_variant") == kernel, "wrong live kernel")
+    require(data.get("live") is True, "live marker is absent")
+    require(data.get("uefi") is True, "required UEFI boot was not observed")
+    require(data.get("build_metadata") is True, "build metadata is absent")
+    require(data.get("graphical_target") is True, "graphical target is inactive")
+    require(data.get("sddm") is True, "SDDM is inactive")
+    require(data.get("networkmanager") is True, "NetworkManager is inactive")
+    require(data.get("plasma_wayland_available") is True, "Plasma Wayland definition is absent")
+    require(has_active_plasma_session(data.get("sessions", [])), "active Plasma Wayland session is absent")
+    require(data.get("sshd_service_active") is False, "SSH service is active")
+    require(data.get("sshd_socket_active") is False, "SSH socket is active")
 ```
 
-Require schema 2, exact kernel variant, Felunyx identity, build metadata, UEFI, inactive SSH service and socket. Live mode additionally requires the active Plasma Wayland session and active graphical target, SDDM, and NetworkManager. Write canonical sorted JSON atomically to `--output` only after validation succeeds.
+Reject malformed JSON, duplicate evidence lines, unknown schema, and missing keys. Write canonical sorted JSON to `--output` only after validation succeeds.
 
 - [ ] **Step 5: Run focused and repository tests**
 
@@ -136,16 +151,16 @@ git commit -m "test: require active Plasma live evidence"
 - Modify: `.github/workflows/virtual-smoke.yml`
 
 **Interfaces:**
-- `set_loader_oneshot.py --vars PATH --entry ENTRY --report PATH` modifies one scenario-owned OVMF vars copy in place and emits a JSON report.
+- `set_loader_oneshot.py --vars PATH --entry ENTRY --report PATH` modifies one scenario-owned OVMF vars copy in place.
 - Allowed entries are exactly `felunyx-linux-zen.conf` and `felunyx-linux-lts.conf`.
-- Report fields: `schema`, `tool`, `tool_version`, `guid`, `variable`, `entry`, `verified`.
+- Report fields are `schema`, `tool_package`, `tool_version`, `guid`, `variable`, `entry`, and `verified`.
 
 - [ ] **Step 1: Write failing helper-contract tests**
 
-Require rejection of unknown entries, missing varstores, missing `virt-fw-vars`, failed command status, output without `LoaderEntryOneShot`, and readback whose UTF-16LE value differs from the requested entry.
+Require rejection of unknown entries, missing varstores, missing `virt-fw-vars`, failed command status, missing readback variable, and readback whose UTF-16LE value differs from the requested entry.
 
 ```python
-def test_loader_oneshot_rejects_positional_fallback():
+def test_loader_oneshot_removes_positional_fallback():
     text = Path("tools/felunyx-run-vm").read_text()
     assert "qmp_sendkey.py" not in text
     assert "sleep 2" not in text
@@ -160,25 +175,36 @@ Expected: FAIL because the current harness uses timed QMP keys.
 
 - [ ] **Step 3: Implement the variable helper**
 
-Use vendor GUID `4a67b082-0a4c-41cf-b6c7-440b29bb8c4f`, variable name `LoaderEntryOneShot`, attributes `NV|BS|RT` (`7`), and UTF-16LE NUL-terminated entry data. Use the installed `virt-fw-vars` JSON import/export path:
+Use vendor GUID `4a67b082-0a4c-41cf-b6c7-440b29bb8c4f`, variable name `LoaderEntryOneShot`, attributes `7` (`NV|BS|RT`), and UTF-16LE NUL-terminated entry data.
 
 ```python
 payload = {
     "version": 2,
     "variables": [{
         "name": "LoaderEntryOneShot",
-        "guid": SYSTEMD_BOOT_GUID,
+        "guid": "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f",
         "attr": 7,
         "data": base64.b64encode((entry + "\0").encode("utf-16-le")).decode("ascii"),
     }],
 }
 ```
 
-Write the payload atomically, run `virt-fw-vars --input VARS --set-json PAYLOAD --output TEMP`, replace the scenario vars file only after success, then run `virt-fw-vars --input VARS --output-json READBACK`. Parse the readback, decode the matching variable, and require exact equality. Record the installed tool version. If Ubuntu 24.04's output uses the same fields under a wrapper object, normalize only that documented wrapper; do not guess alternate field names or fall back to input keys.
+Write the payload atomically. Run:
+
+```bash
+virt-fw-vars --input "$vars" --set-json "$payload" --output "$temporary_vars"
+virt-fw-vars --input "$temporary_vars" --output-json "$readback"
+```
+
+Parse the readback using the Ubuntu 24.04 package's exported `version` and `variables` fields. Require an exact matching name and GUID, decode `data`, and compare it to the requested entry. Replace the scenario vars file only after readback succeeds. Record the package version with:
+
+```bash
+dpkg-query -W -f='${Version}\n' python3-virt-firmware
+```
 
 - [ ] **Step 4: Integrate before QEMU launch**
 
-In `felunyx-run-vm`, make a fresh vars copy for every scenario. For each `boot-live` invocation call:
+For every live scenario, copy a fresh OVMF vars template and call:
 
 ```bash
 python3 "$ROOT/tests/boot/set_loader_oneshot.py" \
@@ -187,11 +213,11 @@ python3 "$ROOT/tests/boot/set_loader_oneshot.py" \
   --report "$artifacts/loader-entry-oneshot.json"
 ```
 
-Abort before QEMU if the report is not verified. Remove the QMP key-selection path; retain QMP only for diagnostics and controlled shutdown.
+Abort before QEMU unless the report contains `"verified": true`. Remove QMP key selection; retain QMP only for diagnostics and controlled shutdown.
 
-- [ ] **Step 5: Pin executor dependency**
+- [ ] **Step 5: Pin the executor dependency**
 
-Add `python3-virt-firmware` to the Ubuntu 24.04 install step and assert `virt-fw-vars --version` or package version is recorded before scenarios run.
+Install `python3-virt-firmware` in the Ubuntu 24.04 workflow step and record its package version into `virtual/executor-packages.txt`.
 
 - [ ] **Step 6: Run tests**
 
@@ -218,6 +244,7 @@ git commit -m "test: select live kernels through OVMF one-shot entries"
 
 **Files:**
 - Create: `packages/felunyx-identity/felunyx-installed-evidence`
+- Modify: `packages/felunyx-identity/felunyx-evidence.service`
 - Modify: `packages/felunyx-identity/PKGBUILD`
 - Create: `tests/boot/assert_installed_system.py`
 - Create: `tests/fixtures/evidence/installed-zen-valid.json`
@@ -225,12 +252,12 @@ git commit -m "test: select live kernels through OVMF one-shot entries"
 - Modify: `tests/test_virtual_harness.py`
 
 **Interfaces:**
-- Guest command `/usr/lib/felunyx/felunyx-installed-evidence` emits `FELUNYX_INSTALLED=<json>` only when the existing evidence fw_cfg marker is enabled and `/run/felunyx/live` is absent.
+- Guest command `/usr/lib/felunyx/felunyx-installed-evidence` emits `FELUNYX_INSTALLED=<json>` only when the evidence fw_cfg marker is enabled and `/run/felunyx/live` is absent.
 - `assert_installed_system.py --log PATH --kernel zen|lts --output PATH --timeout N` validates and persists parsed evidence.
 
 - [ ] **Step 1: Write failing installed-evidence tests**
 
-Test exact requirements:
+Use this exact mapping:
 
 ```python
 EXPECTED_SUBVOLUMES = {
@@ -242,7 +269,7 @@ EXPECTED_SUBVOLUMES = {
 }
 ```
 
-Require `/boot/efi` to be `vfat`, both `linux-zen` and `linux-lts` packages and images, `grub` package, non-empty `/boot/grub/grub.cfg`, `felunyx-iso-hooks` absent, `/run/felunyx/live` absent, `/etc/sudoers.d/10-felunyx-live` absent, `/etc/sddm.conf.d/10-felunyx-live.conf` absent, SSH service/socket inactive, and build metadata present. Btrfs options must include `compress=zstd:1`; EFI options must include `umask=0077` or the equivalent normalized mask.
+Require `/boot/efi` to be `vfat`, both `linux-zen` and `linux-lts` packages and images, the `grub` package, non-empty `/boot/grub/grub.cfg`, `felunyx-iso-hooks` absent, live marker absent, live sudo policy absent, live SDDM autologin absent, SSH service/socket inactive, and build metadata present. Btrfs options include `compress=zstd:1`; EFI options include normalized `umask=0077`.
 
 - [ ] **Step 2: Run tests and confirm failure**
 
@@ -252,13 +279,33 @@ Expected: FAIL because no installed inspector exists.
 
 - [ ] **Step 3: Implement the read-only guest inspector**
 
-Use `subprocess.run(..., check=False, text=True, capture_output=True)` for `pacman -Q`, `findmnt --json --output TARGET,SOURCE,FSTYPE,OPTIONS`, `btrfs subvolume list /`, and systemd states. Never install, enable, repair, regenerate GRUB, or remount. Include command return codes and normalized observations in schema 1 installed payload.
+Use a concrete command helper:
 
-Package the executable as mode `0755` in `felunyx-identity`; it belongs in both live and installed roots, but returns without emitting installed evidence while the live marker exists.
+```python
+def run(command: list[str]) -> dict:
+    completed = subprocess.run(command, check=False, text=True, capture_output=True)
+    return {
+        "command": command,
+        "returncode": completed.returncode,
+        "stdout": completed.stdout,
+        "stderr": completed.stderr,
+    }
+```
+
+Collect `pacman -Q`, `findmnt --json --output TARGET,SOURCE,FSTYPE,OPTIONS`, `btrfs subvolume list /`, `/etc/fstab`, GRUB files, kernel files, build metadata, live-only file absence, and systemd states. Never install, enable, repair, regenerate GRUB, remount, or modify configuration.
+
+Package the executable as mode `0755`. Change the oneshot service to run both guarded collectors in order:
+
+```ini
+ExecStart=/usr/lib/felunyx/felunyx-evidence
+ExecStart=/usr/lib/felunyx/felunyx-installed-evidence
+```
+
+The live collector exits silently when the live marker is absent. The installed collector exits silently when the live marker exists.
 
 - [ ] **Step 4: Implement strict host assertions**
 
-Parse only `FELUNYX_INSTALLED=`. Reject duplicate success payloads, unknown schema, wrong kernel, wrong mount source, missing subvolume, missing option, live-only residue, or absent boot payload. Persist canonical JSON atomically only after validation.
+Parse only `FELUNYX_INSTALLED=`. Reject duplicate payloads, unknown schema, wrong kernel, wrong mount source, missing subvolume, missing option, live-only residue, active SSH, or absent boot payload. Persist canonical JSON atomically only after validation.
 
 - [ ] **Step 5: Run tests**
 
@@ -281,7 +328,98 @@ git commit -m "test: inspect installed GRUB and Btrfs state"
 
 ---
 
-### Task 4: Add Deterministic Calamares Failure Injection
+### Task 4: Select Installed LTS Through a Verified GRUB One-Shot Entry
+
+**Files:**
+- Create: `packages/felunyx-identity/felunyx-prepare-grub-oneshot`
+- Modify: `packages/felunyx-identity/felunyx-evidence.service`
+- Modify: `packages/felunyx-identity/PKGBUILD`
+- Create: `tests/boot/assert_grub_oneshot.py`
+- Create: `tests/fixtures/grub/grub.cfg`
+- Modify: `tools/felunyx-run-vm`
+- Modify: `tests/test_virtual_harness.py`
+
+**Interfaces:**
+- fw_cfg `opt/felunyx/grub-next` accepts only `linux-lts`.
+- Guest emits `FELUNYX_GRUB_NEXT=<json>` after `grub-reboot` and `grub-editenv` readback succeed.
+- `boot-installed` accepts optional `--prepare-next lts` only with `--kernel zen`.
+
+- [ ] **Step 1: Write failing GRUB-selection tests**
+
+The fixture contains a Zen top-level entry and an LTS entry inside the advanced submenu. Test that the parser returns a selector formed only from GRUB IDs:
+
+```python
+assert selector == "gnulinux-advanced-ROOTUUID>gnulinux-linux-lts-advanced-ROOTUUID"
+```
+
+Reject numeric indexes, display titles, missing `--id`, multiple LTS matches, and entries whose body does not load `vmlinuz-linux-lts`.
+
+- [ ] **Step 2: Run tests and confirm failure**
+
+Run: `python3 -m pytest -q tests/test_virtual_harness.py -k grub_oneshot`
+
+Expected: FAIL because installed LTS currently relies on generic menu input.
+
+- [ ] **Step 3: Implement the guest preparation helper**
+
+The helper exits silently unless the system is installed, the evidence marker is enabled, and `opt/felunyx/grub-next/raw` equals `linux-lts`. Parse `/boot/grub/grub.cfg`, extract the enclosing submenu ID and LTS menuentry ID, and build `submenu_id>entry_id`.
+
+Run:
+
+```bash
+grub-reboot "$selector"
+grub-editenv /boot/grub/grubenv list
+```
+
+Require readback line `next_entry=$selector`. Emit:
+
+```python
+{
+    "schema": 1,
+    "requested": "linux-lts",
+    "selector": selector,
+    "verified": True,
+}
+```
+
+Write it to serial as `FELUNYX_GRUB_NEXT=` and to `/run/felunyx/grub-next.json`, call `sync`, then power off. The helper performs no repair and supports no persistent default change.
+
+- [ ] **Step 4: Order the installed boot services**
+
+Add a third oneshot command after installed evidence:
+
+```ini
+ExecStart=/usr/lib/felunyx/felunyx-prepare-grub-oneshot
+```
+
+This guarantees Zen evidence is emitted before the test-only one-shot preparation powers off.
+
+- [ ] **Step 5: Integrate host validation**
+
+When `boot-installed --kernel zen --prepare-next lts` is requested, add fw_cfg `opt/felunyx/grub-next=linux-lts`, require valid installed Zen evidence, then require valid `FELUNYX_GRUB_NEXT=` evidence. The next ordinary `boot-installed --kernel lts` must reach LTS through GRUB. No QMP navigation is permitted.
+
+- [ ] **Step 6: Run tests**
+
+Run:
+
+```bash
+python3 -m pytest -q tests/test_virtual_harness.py
+python3 -m pytest -q tests/test_identity.py
+make validate
+```
+
+Expected: all pass.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add packages/felunyx-identity tests/boot/assert_grub_oneshot.py tests/fixtures/grub tools/felunyx-run-vm tests/test_virtual_harness.py
+git commit -m "test: select installed LTS through GRUB one-shot state"
+```
+
+---
+
+### Task 5: Add Deterministic Calamares Failure Injection
 
 **Files:**
 - Create: `packages/felunyx-iso-hooks/calamares-failure/settings.conf`
@@ -292,22 +430,23 @@ git commit -m "test: inspect installed GRUB and Btrfs state"
 - Modify: `tests/test_virtual_harness.py`
 
 **Interfaces:**
-- fw_cfg marker `opt/felunyx/install-mode` has exact values `success` or `failure`.
-- Installer driver emits `FELUNYX_INSTALL=` events: `start`, `stage`, `success`, `failure`, or `blocked`.
-- Failure module returns a deterministic Calamares job error class `FelunyxInjectedFailure` after target context exists and before `umount`/success.
+- fw_cfg `opt/felunyx/install-mode` has exact values `success` and `failure`.
+- Installer events are `start`, `stage`, `success`, `failure`, and `blocked`.
+- Failure class is exactly `FelunyxInjectedFailure`.
 
 - [ ] **Step 1: Write failing configuration and event tests**
 
-Require failure settings to copy the production show/exec sequence but insert `felunyx-fail` after `bootloader` and before `umount`. Require the module to return a structured failure rather than raise an unclassified exception. Require the normal path to remain byte-for-byte governed by production settings.
+Require failure settings to copy the production sequence and insert `felunyx-fail` after `bootloader` and before `umount`. Require the test module to contain:
 
 ```python
-def test_failure_module_is_explicit_and_cannot_run_normally():
-    driver = Path("packages/felunyx-iso-hooks/drive-installation.py").read_text()
-    assert "opt/felunyx/install-mode" in driver
-    assert "FelunyxInjectedFailure" in Path(
-        "packages/felunyx-iso-hooks/calamares-failure/modules/felunyx-fail/main.py"
-    ).read_text()
+def run():
+    return (
+        "FelunyxInjectedFailure",
+        "Intentional Phase 2 installer failure injection",
+    )
 ```
+
+Require the normal path to use production settings without copying the failure overlay into `/etc/calamares`.
 
 - [ ] **Step 2: Run tests and confirm failure**
 
@@ -317,19 +456,19 @@ Expected: FAIL because failure injection is absent.
 
 - [ ] **Step 3: Package the test-only overlay**
 
-Install it under `/usr/lib/felunyx/tests/calamares-failure/`, never `/etc/calamares/`. The failure `settings.conf` uses an absolute modules-search path to its test module and `/usr/lib/calamares/modules` for production modules. The PKGBUILD test must prove no test overlay replaces the production config.
+Install it below `/usr/lib/felunyx/tests/calamares-failure/`. Its `modules-search` contains the absolute test-module directory first and `/usr/lib/calamares/modules` second. Add a package test proving production `/etc/calamares/settings.conf` remains unchanged.
 
 - [ ] **Step 4: Strengthen the installer driver**
 
-Read the exact mode from fw_cfg. Launch production Calamares for `success`; launch Calamares with the explicit test settings path for `failure`. Record every event to `/run/felunyx/installer-harness.log` and serial. Preserve `/root/.cache/calamares/session.log`, `/var/log/Calamares.log` when present, and the harness log into `/run/felunyx/installer-evidence/` before powering off.
+Read the exact mode from fw_cfg. Launch production Calamares for `success`; launch Calamares with the explicit failure settings path for `failure`. Record every event in `/run/felunyx/installer-harness.log` and serial. Before poweroff, copy the harness log plus existing Calamares logs into `/run/felunyx/installer-evidence/`.
 
-For failure mode, success is forbidden. Emit:
+For failure mode, emit:
 
 ```python
 emit("failure", stage="felunyx-fail", error_class="FelunyxInjectedFailure")
 ```
 
-only after Calamares reports the expected injected job failure. Any missing accessibility object, crash, timeout, or unexpected result emits `blocked` and exits non-zero.
+only after the expected Calamares job failure is observed. Unexpected success, timeout, missing accessibility object, crash, or unknown error emits `blocked` and exits non-zero.
 
 - [ ] **Step 5: Run tests**
 
@@ -352,7 +491,7 @@ git commit -m "test: add controlled Calamares failure evidence"
 
 ---
 
-### Task 5: Refactor the QEMU Harness into Explicit Scenarios
+### Task 6: Refactor the QEMU Harness into Explicit Scenarios
 
 **Files:**
 - Modify: `tools/felunyx-run-vm`
@@ -360,17 +499,16 @@ git commit -m "test: add controlled Calamares failure evidence"
 - Create: `docs/operations/phase-2-virtual-tests.md`
 
 **Interfaces:**
-- Commands:
-  - `boot-live --iso ISO --kernel zen|lts --artifacts DIR --timeout N`
-  - `install --iso ISO --disk DISK --artifacts DIR --mode success|failure --timeout N`
-  - `boot-installed --disk DISK --kernel zen|lts --artifacts DIR --timeout N`
-  - `boot-bios --iso ISO --artifacts DIR --timeout N`
-- Every command writes `scenario-result.json` with `schema`, `scenario`, `status`, `started_at`, `finished_at`, and `evidence` paths.
-- Required status values are `pass`, `fail`, `blocked`, `not-run`.
+- `boot-live --iso ISO --kernel zen|lts --artifacts DIR --timeout N`
+- `install --iso ISO --disk DISK --artifacts DIR --mode success|failure --timeout N`
+- `boot-installed --disk DISK --kernel zen|lts --artifacts DIR [--prepare-next lts] --timeout N`
+- `boot-bios --iso ISO --artifacts DIR --timeout N`
+- Every command writes `scenario-result.json` with `schema`, `scenario`, `status`, `started_at`, `finished_at`, `message`, and `evidence`.
+- Status values are `pass`, `fail`, `blocked`, and `not-run`.
 
 - [ ] **Step 1: Write failing CLI and artifact tests**
 
-Test invalid argument exit `64`, scenario-owned vars and QMP paths, captured QEMU stderr, no shared OVMF vars, no `|| true` around evidence validators, and atomic `scenario-result.json` creation even on traps.
+Test invalid argument exit `64`, scenario-owned vars and QMP paths, captured QEMU stderr, no shared OVMF vars, no `|| true` around validators, and atomic `scenario-result.json` creation from exit traps.
 
 - [ ] **Step 2: Run tests and confirm failure**
 
@@ -378,26 +516,26 @@ Run: `python3 -m pytest -q tests/test_virtual_harness.py -k 'scenario or cli or 
 
 Expected: FAIL because the current script emits only serial logs and suppresses part of installer waiting.
 
-- [ ] **Step 3: Implement common lifecycle helpers**
+- [ ] **Step 3: Implement the common lifecycle**
 
-Add shell functions:
+Add these shell functions with one responsibility each:
 
 ```bash
-write_result STATUS MESSAGE
-start_qemu
-stop_qemu
-preserve_diagnostics
+write_result(){ python3 "$ROOT/tests/boot/write_scenario_result.py" "$@"; }
+start_qemu(){ qemu-system-x86_64 "${args[@]}" 2>"$artifacts/qemu.stderr.log" & pid=$!; }
+stop_qemu(){ kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; }
+preserve_diagnostics(){ test ! -S "$qmp" || cp -a "$qmp" "$artifacts/qmp.socket.observed" 2>/dev/null || true; }
 ```
 
-Redirect QEMU stderr to `$artifacts/qemu.stderr.log`, retain QMP socket diagnostics, copy a fresh OVMF vars file, and use traps that preserve evidence before terminating QEMU. No cleanup may remove the disk or scenario directory.
+Create `tests/boot/write_scenario_result.py` in this task so JSON is written atomically and shell escaping cannot corrupt it. Traps preserve evidence before terminating QEMU. Cleanup never removes a disk or scenario directory.
 
 - [ ] **Step 4: Wire strict validators**
 
-Live scenarios call `expect_serial.py --mode live`. Installed scenarios call `assert_installed_system.py`. Success install requires exactly one `event=success`; failure install requires exactly one expected injected `event=failure`, no success marker, retained logs, and a separate disposable disk.
+Live calls `expect_serial.py`. Installed calls `assert_installed_system.py`; Zen preparation also calls `assert_grub_oneshot.py`. Success install requires exactly one success event. Failure install requires exactly one expected failure event, no success event, retained logs, and a separate disposable disk.
 
 - [ ] **Step 5: Document exact commands and claims**
 
-Document VM resources (2 vCPU, 4 GiB RAM, 64 GiB disk), KVM/TCG distinction, required new artifact after guest changes, evidence files, manual reproduction commands, and the rule that static validation is not V.
+Document 2 vCPU, 4 GiB RAM, 64 GiB disk, KVM/TCG distinction, evidence paths, new-ISO requirement, manual reproduction commands, and that source validation does not establish V.
 
 - [ ] **Step 6: Run tests**
 
@@ -415,13 +553,13 @@ Expected: all pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add tools/felunyx-run-vm tests/test_virtual_harness.py docs/operations/phase-2-virtual-tests.md
+git add tools/felunyx-run-vm tests/boot/write_scenario_result.py tests/test_virtual_harness.py docs/operations/phase-2-virtual-tests.md
 git commit -m "test: make virtual scenarios fail closed"
 ```
 
 ---
 
-### Task 6: Make GitHub Actions Run and Summarize Every Scenario
+### Task 7: Make GitHub Actions Run and Summarize Every Scenario
 
 **Files:**
 - Modify: `.github/workflows/virtual-smoke.yml`
@@ -430,17 +568,21 @@ git commit -m "test: make virtual scenarios fail closed"
 
 **Interfaces:**
 - Workflow input remains `artifact_run_id`.
-- Scenario step IDs: `live_zen`, `live_lts`, `install`, `installed_zen`, `installed_lts`, `failure_injection`, `bios`.
-- Final file: `virtual/gate-summary.json`.
+- Scenario step IDs are `live_zen`, `live_lts`, `install`, `installed_zen`, `installed_lts`, `failure_injection`, and `bios`.
+- Final file is `virtual/gate-summary.json`.
 
 - [ ] **Step 1: Write failing workflow-policy tests**
 
-Require independent named steps, `continue-on-error: true` for evidence continuity, final summary with `if: always()`, explicit required scenario list, BIOS excluded from required aggregate, `python3-virt-firmware` installed, read-only permissions, full-SHA actions, and artifact upload of the whole `virtual/` evidence tree rather than only `*.log`.
+Require independent named steps, `continue-on-error: true`, final summary with `if: always()`, explicit required scenario list, BIOS excluded from the required aggregate, `python3-virt-firmware` installed, read-only permissions, full-SHA actions, and upload of the complete `virtual/` tree.
 
 ```python
 REQUIRED = {
-    "live_zen", "live_lts", "install",
-    "installed_zen", "installed_lts", "failure_injection",
+    "live_zen",
+    "live_lts",
+    "install",
+    "installed_zen",
+    "installed_lts",
+    "failure_injection",
 }
 ```
 
@@ -452,13 +594,11 @@ Expected: FAIL because scenarios are grouped and no final summary exists.
 
 - [ ] **Step 3: Split workflow execution**
 
-Create the successful installation disk once, then boot it separately for Zen and LTS. Create a different disk for failure injection. Each step writes its result and continues so all possible evidence is collected.
+Create the successful installation disk once. `installed_zen` validates Zen and prepares the GRUB LTS one-shot. `installed_lts` then boots the same disk without menu input. Create a different disk for failure injection. Every step writes its result and continues so later evidence can be collected.
 
 - [ ] **Step 4: Implement fail-closed summary**
 
-Use an inline Python script that reads each required `scenario-result.json`. Missing files become `not-run`. The job exits non-zero unless every required status is `pass`. BIOS is recorded but ignored for required aggregate.
-
-Summary shape:
+Use inline Python to read each required `scenario-result.json`. Missing files become `not-run`. Exit non-zero unless every required status is `pass`. Record BIOS separately.
 
 ```json
 {
@@ -497,7 +637,7 @@ git commit -m "ci: summarize every Phase 2 virtual scenario"
 
 ---
 
-### Task 7: Correct Phase Status Without Promoting Gates
+### Task 8: Correct Phase Status Without Promoting Gates
 
 **Files:**
 - Modify: `docs/status/phase-2-reproducible-iso.md`
@@ -505,11 +645,11 @@ git commit -m "ci: summarize every Phase 2 virtual scenario"
 - Modify: `docs/README.md`
 - Modify: `tests/test_repository_contract.py`
 
-**Interfaces:** Documentation must expose exact labels: `implemented`, `validated remotely`, `validated in VM`, `validated in hardware`, `pending`, or `not tested`.
+**Interfaces:** Documentation uses only `implemented`, `validated remotely`, `validated in VM`, `validated in hardware`, `pending`, and `not tested` for validation state.
 
 - [ ] **Step 1: Write failing documentation-state tests**
 
-Require the status document to mention PR #3, branch and head, build run `30951476281`, development artifact status, R pending review, V pending a matching rebuilt ISO and workflow, H not tested, PR draft, and Phase 3 blocked. Reject the stale phrase `Implementation | Ready to start`.
+Require PR #3, branch and head, build run `30951476281`, artifact digest, internal development status, R pending review, V pending a matching rebuilt ISO and workflow, H not tested, draft state, and Phase 3 blocked. Reject `Implementation | Ready to start`.
 
 - [ ] **Step 2: Run tests and confirm failure**
 
@@ -519,17 +659,9 @@ Expected: FAIL on stale implementation wording.
 
 - [ ] **Step 3: Update canonical status**
 
-Record:
+Record that implementation exists but is unmerged; source validation and one trusted frozen build succeeded; the artifact is not a release; R awaits complete evidence and comparison review; V awaits the hardened workflow against a matching rebuilt ISO; H is not tested; and no merge or Phase 3 begins before Mafu's review.
 
-- implementation exists but is not merged;
-- source validation and one trusted frozen build succeeded;
-- internal artifact run and digest are evidence inputs, not a release;
-- R is pending until all Remote requirements and comparison evidence are reviewed;
-- V is pending until the hardened workflow runs against a matching rebuilt ISO and artifacts are reviewed;
-- H is not tested and is not required to close Phase 2;
-- no merge or Phase 3 before Mafu's phase review.
-
-Change the hardening spec status to `Approved on 2026-08-05; implementation plan written` and link this plan.
+Set the hardening spec status to `Approved on 2026-08-05; implementation plan written` and link this plan.
 
 - [ ] **Step 4: Run documentation tests**
 
@@ -551,15 +683,15 @@ git commit -m "docs: record the pending Phase 2 validation gates"
 
 ---
 
-### Task 8: Verify Source Changes and Prepare the Rebuild Gate
+### Task 9: Verify Source Changes and Prepare the Rebuild Gate
 
 **Files:**
-- Modify only when verification exposes a defect in files owned by Tasks 1–7.
-- Update: PR #5 description after evidence exists.
+- Modify only files owned by Tasks 1–8 when verification exposes a defect.
+- Update: draft PR #5 description.
 
-**Interfaces:** Produces a source-verification record and an explicit rebuild/Virtual-test handoff; it does not mark V complete.
+**Interfaces:** Produces a Remote source-verification result and an explicit rebuild handoff. It does not mark V complete.
 
-- [ ] **Step 1: Run the full local Remote suite from a clean checkout**
+- [ ] **Step 1: Run the full Remote suite from a clean checkout**
 
 Run:
 
@@ -571,11 +703,11 @@ git diff --check
 git status --short
 ```
 
-Expected: tests pass, no whitespace errors, and only intended tracked changes before the final commit.
+Expected: tests pass, no whitespace errors, and only intended tracked changes.
 
 - [ ] **Step 2: Audit security and scope**
 
-Run searches requiring no coordinate automation, timed kernel-selection fallback, unpinned action, writable workflow permission, secret/private key, committed ISO, or Phase 3 file:
+Run:
 
 ```bash
 ! grep -R -nE 'xdotool|pyautogui|moveTo\(|click\(x=|sleep 2.*down.*ret' tools tests packages .github
@@ -584,26 +716,27 @@ Run searches requiring no coordinate automation, timed kernel-selection fallback
 ! find . -type f \( -name '*.iso' -o -name '*.qcow2' -o -name '*.key' -o -name '*.pem' \) -print -quit | grep -q .
 ```
 
-Expected: every command succeeds; the final `find` negation proves no large image or key was committed.
+Expected: every command succeeds; the final negated pipeline proves no image or key is committed.
 
 - [ ] **Step 3: Review the diff against the approved spec**
 
-Confirm every requirement maps to code/tests and no accepted decision changed. Record the strongest achieved level as Remote only.
+Map each specification requirement to code and tests. Confirm no accepted decision changed. Record the strongest achieved level as Remote only.
 
-- [ ] **Step 4: Commit any verification-only corrections**
+- [ ] **Step 4: Commit verification corrections only when needed**
 
-Use the narrowest applicable prefix, for example:
+Stage only affected files and use the narrowest prefix. Example:
 
 ```bash
+git add tools/felunyx-run-vm tests/test_virtual_harness.py
 git commit -m "fix: preserve complete virtual failure evidence"
 ```
 
-Skip this commit when no correction is needed.
+When no correction is needed, create no empty commit.
 
 - [ ] **Step 5: Update draft PR #5**
 
-Add changes, files, decisions, tests, Remote result, Virtual pending state, Hardware not tested, rollback, required new ISO build, and next review point. Keep PR #5 draft and target `agent/phase-2-implementation`.
+Add changes, files, decisions, tests, Remote result, Virtual pending state, Hardware not tested, rollback, required new ISO build, and next review point. Keep PR #5 draft and targeting `agent/phase-2-implementation`.
 
 - [ ] **Step 6: Stop at the implementation review boundary**
 
-Do not merge PR #5 into PR #3, rebuild, dispatch the Virtual workflow, approve Phase 2, or begin Phase 3 without Mafu's next review. After integration approval, build a new matching ISO, run `Virtual Phase 2 smoke`, inspect every scenario artifact, and only then update V evidence.
+Do not merge PR #5 into PR #3, rebuild, dispatch the Virtual workflow, approve Phase 2, or begin Phase 3 without Mafu's next review. After integration approval, build a matching ISO, run `Virtual Phase 2 smoke`, inspect every scenario artifact, and only then update V evidence.
