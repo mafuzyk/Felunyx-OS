@@ -8,6 +8,7 @@ Type=oneshot
 TimeoutStartSec=150s
 ExecStart=/usr/lib/felunyx/felunyx-evidence
 ExecStart=/usr/lib/felunyx/felunyx-installed-evidence
+ExecStart=/usr/lib/felunyx/felunyx-prepare-grub-oneshot
 
 [Install]
 WantedBy=graphical.target
