@@ -23,8 +23,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     env:
-      SUCCESS_DISK: ${{ runner.temp }}/felunyx-success.qcow2
-      FAILURE_DISK: ${{ runner.temp }}/felunyx-failure.qcow2
+      SUCCESS_DISK: ${{ github.workspace }}/felunyx-success.qcow2
+      FAILURE_DISK: ${{ github.workspace }}/felunyx-failure.qcow2
     steps:
       - name: Check out workflow controller
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
