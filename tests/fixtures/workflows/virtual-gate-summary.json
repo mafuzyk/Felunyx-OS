@@ -1,0 +1,15 @@
+{
+  "best_effort": {
+    "bios": "not-run"
+  },
+  "required": {
+    "failure_injection": "pass",
+    "install": "pass",
+    "installed_lts": "pass",
+    "installed_zen": "pass",
+    "live_lts": "pass",
+    "live_zen": "pass"
+  },
+  "schema": 1,
+  "virtual_gate": "pass"
+}

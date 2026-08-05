@@ -116,7 +116,7 @@ else
 fi
 python3 - "$stage/build-info.json" "$mode" "$archive_date" "$commit" "$epoch" <<'PY'
 import json,sys
-with open(sys.argv[1],'w') as f: json.dump({"schema":1,"phase":2,"mode":sys.argv[2],"archive_date":sys.argv[3],"commit":sys.argv[4],"source_date_epoch":int(sys.argv[5]),"archiso":"89-1"},f,indent=2,sort_keys=True); f.write('\n')
+with open(sys.argv[1],'w') as f: json.dump({"schema":1,"phase":2,"mode":sys.argv[2],"archive_date":sys.argv[3],"source_commit":sys.argv[4],"source_date_epoch":int(sys.argv[5]),"archiso":"89-1"},f,indent=2,sort_keys=True); f.write('\n')
 PY
 python3 - "$ROOT/build/environment.lock.json" "$ROOT/iso/upstream/releng.lock.json" "$stage/source-lock.json" <<'PY'
 import json,sys

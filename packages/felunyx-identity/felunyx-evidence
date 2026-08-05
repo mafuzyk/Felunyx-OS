@@ -1,40 +1,223 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import json, subprocess, time
+
+import json
+import os
+import subprocess
+import tempfile
+import time
 from pathlib import Path
 
+LIVE_MARKER = Path("/run/felunyx/live")
+FW_CFG_MARKER = Path(
+    "/sys/firmware/qemu_fw_cfg/by_name/opt/felunyx/evidence/raw"
+)
+BUILD_INFO = Path("/usr/lib/felunyx/build-info.json")
+PLASMA_WAYLAND = Path("/usr/share/wayland-sessions/plasma.desktop")
+OUTPUT = Path("/run/felunyx/evidence.json")
+SESSION_WAIT_SECONDS = 120
+
+
 def enabled() -> bool:
-    cmdline=Path('/proc/cmdline').read_text(errors='ignore')
-    fw=Path('/sys/firmware/qemu_fw_cfg/by_name/opt/felunyx/evidence/raw')
-    return 'felunyx.evidence=1' in cmdline or (fw.exists() and fw.read_bytes().rstrip(b'\0\n') == b'1')
+    try:
+        command_line = Path("/proc/cmdline").read_text(
+            encoding="utf-8", errors="ignore"
+        )
+    except OSError:
+        command_line = ""
+
+    if "felunyx.evidence=1" in command_line:
+        return True
+
+    try:
+        return (
+            FW_CFG_MARKER.exists()
+            and FW_CFG_MARKER.read_bytes().rstrip(b"\0\n") == b"1"
+        )
+    except OSError:
+        return False
+
 
 def active(unit: str) -> bool:
-    return subprocess.run(['systemctl','is-active','--quiet',unit],check=False).returncode == 0
+    return (
+        subprocess.run(
+            ["systemctl", "is-active", "--quiet", unit],
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
+def read_os_release() -> dict[str, str]:
+    result: dict[str, str] = {}
+    try:
+        lines = Path("/usr/lib/os-release").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    except OSError:
+        return result
+
+    for line in lines:
+        if "=" not in line or line.startswith("#"):
+            continue
+        key, value = line.split("=", 1)
+        result[key] = value.strip().strip('"')
+    return result
+
+
+def collect_sessions() -> list[dict[str, object]]:
+    listed = subprocess.run(
+        ["loginctl", "list-sessions", "--no-legend", "--no-pager"],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if listed.returncode != 0:
+        return []
+
+    sessions: list[dict[str, object]] = []
+    for line in listed.stdout.splitlines():
+        fields = line.split()
+        if not fields:
+            continue
+        session_id = fields[0]
+        shown = subprocess.run(
+            [
+                "loginctl",
+                "show-session",
+                session_id,
+                "--no-pager",
+                "-p",
+                "Name",
+                "-p",
+                "Class",
+                "-p",
+                "Type",
+                "-p",
+                "Desktop",
+                "-p",
+                "Active",
+                "-p",
+                "Remote",
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        if shown.returncode != 0:
+            continue
+
+        properties: dict[str, str] = {}
+        for property_line in shown.stdout.splitlines():
+            if "=" not in property_line:
+                continue
+            key, value = property_line.split("=", 1)
+            properties[key] = value
+
+        sessions.append(
+            {
+                "id": session_id,
+                "name": properties.get("Name", ""),
+                "class": properties.get("Class", "").casefold(),
+                "type": properties.get("Type", "").casefold(),
+                "desktop": properties.get("Desktop", ""),
+                "active": properties.get("Active", "").casefold() == "yes",
+                "remote": properties.get("Remote", "").casefold() == "yes",
+            }
+        )
+
+    return sessions
+
+
+def has_active_plasma_session(sessions: list[dict[str, object]]) -> bool:
+    for session in sessions:
+        desktop = str(session.get("desktop", "")).casefold()
+        if (
+            session.get("class") == "user"
+            and session.get("type") == "wayland"
+            and session.get("active") is True
+            and session.get("remote") is False
+            and ("kde" in desktop or "plasma" in desktop)
+        ):
+            return True
+    return False
+
+
+def wait_for_sessions(timeout: int) -> list[dict[str, object]]:
+    deadline = time.monotonic() + timeout
+    sessions: list[dict[str, object]] = []
+    while True:
+        sessions = collect_sessions()
+        if has_active_plasma_session(sessions):
+            return sessions
+        if time.monotonic() >= deadline:
+            return sessions
+        time.sleep(1)
+
+
+def write_atomic(path: Path, data: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    file_descriptor, temporary = tempfile.mkstemp(
+        prefix=f".{path.name}.", dir=path.parent
+    )
+    temporary_path = Path(temporary)
+    try:
+        os.fchmod(file_descriptor, 0o644)
+        with os.fdopen(file_descriptor, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    except Exception:
+        temporary_path.unlink(missing_ok=True)
+        raise
+
+
+def emit_serial(data: dict[str, object]) -> bool:
+    line = "FELUNYX_EVIDENCE=" + json.dumps(data, sort_keys=True)
+    for target in ("/dev/ttyS0", "/dev/console"):
+        try:
+            with open(target, "w", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+            return True
+        except OSError:
+            continue
+    return False
+
 
 def main() -> int:
-    if not enabled(): return 0
-    for _ in range(90):
-        if active('graphical.target') or active('multi-user.target'): break
-        time.sleep(1)
-    os_release={}
-    for line in Path('/usr/lib/os-release').read_text().splitlines():
-        if '=' in line:
-            k,v=line.split('=',1); os_release[k]=v.strip('"')
-    uname=subprocess.check_output(['uname','-r'],text=True).strip()
-    data={
-      'schema':1,'id':os_release.get('ID'),'pretty_name':os_release.get('PRETTY_NAME'),
-      'kernel':uname,'kernel_variant':'lts' if 'lts' in uname else 'zen' if 'zen' in uname else 'unknown',
-      'graphical_target':active('graphical.target'),'sddm':active('sddm.service'),
-      'networkmanager':active('NetworkManager.service'),
-      'sshd_active':active('sshd.service'),'live':Path('/run/felunyx/live').exists(),
+    if not enabled() or not LIVE_MARKER.exists():
+        return 0
+
+    sessions = wait_for_sessions(SESSION_WAIT_SECONDS)
+    os_release = read_os_release()
+    kernel = subprocess.check_output(["uname", "-r"], text=True).strip()
+    kernel_variant = (
+        "lts" if "lts" in kernel else "zen" if "zen" in kernel else "unknown"
+    )
+
+    data: dict[str, object] = {
+        "schema": 2,
+        "id": os_release.get("ID"),
+        "pretty_name": os_release.get("PRETTY_NAME"),
+        "build_metadata": BUILD_INFO.is_file(),
+        "kernel": kernel,
+        "kernel_variant": kernel_variant,
+        "live": True,
+        "uefi": Path("/sys/firmware/efi").is_dir(),
+        "graphical_target": active("graphical.target"),
+        "sddm": active("sddm.service"),
+        "networkmanager": active("NetworkManager.service"),
+        "plasma_wayland_available": PLASMA_WAYLAND.is_file(),
+        "sessions": sessions,
+        "sshd_service_active": active("sshd.service"),
+        "sshd_socket_active": active("sshd.socket"),
     }
-    line='FELUNYX_EVIDENCE='+json.dumps(data,sort_keys=True)
-    Path('/run/felunyx').mkdir(parents=True,exist_ok=True)
-    Path('/run/felunyx/evidence.json').write_text(json.dumps(data,indent=2,sort_keys=True)+'\n')
-    for target in ('/dev/ttyS0','/dev/console'):
-        try:
-            with open(target,'w') as f: f.write(line+'\n')
-            break
-        except OSError: pass
-    return 0
-if __name__=='__main__': raise SystemExit(main())
+
+    write_atomic(OUTPUT, data)
+    return 0 if emit_serial(data) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

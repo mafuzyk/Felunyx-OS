@@ -1,0 +1,135 @@
+from __future__ import annotations
+
+import ast
+import importlib.util
+from pathlib import Path
+
+PRODUCTION = Path("packages/felunyx-calamares-config/settings.conf")
+PKG_DIR = Path("packages/felunyx-iso-hooks")
+FAILURE_SETTINGS = PKG_DIR / "calamares-failure-settings.conf"
+FAILURE_DESCRIPTOR = PKG_DIR / "felunyx-fail-module.desc"
+FAILURE_MAIN = PKG_DIR / "felunyx-fail-main.py"
+DRIVER = Path("packages/felunyx-iso-hooks/drive-installation.py")
+PKGBUILD = Path("packages/felunyx-iso-hooks/PKGBUILD")
+INSTALLED_OVERLAY = "/usr/lib/felunyx/tests/calamares-failure"
+
+
+def exec_sequence(text: str) -> list[str]:
+    line = next(
+        item.strip()
+        for item in text.splitlines()
+        if item.strip().startswith("- exec:")
+    )
+    payload = line.split("[", 1)[1].rsplit("]", 1)[0]
+    return [item.strip() for item in payload.split(",")]
+
+
+def test_failure_overlay_inserts_one_module_without_changing_production():
+    production = PRODUCTION.read_text(encoding="utf-8")
+    failure = FAILURE_SETTINGS.read_text(encoding="utf-8")
+
+    normal_exec = exec_sequence(production)
+    failure_exec = exec_sequence(failure)
+    position = normal_exec.index("bootloader") + 1
+    expected = normal_exec.copy()
+    expected.insert(position, "felunyx-fail")
+
+    assert failure_exec == expected
+    assert failure_exec[-1] == "umount"
+    assert f"{INSTALLED_OVERLAY}/modules" in failure
+    assert "/usr/lib/calamares/modules" in failure
+    for shared in (
+        "show: [ welcome, locale, keyboard, partition, users, summary ]",
+        "show: [ finished ]",
+        "branding: felunyx",
+        "prompt-install: true",
+        "dont-chroot: false",
+        "oem-setup: false",
+    ):
+        assert shared in production and shared in failure
+    assert "felunyx-fail" not in production
+
+
+def test_failure_module_has_explicit_python_job_contract():
+    descriptor = FAILURE_DESCRIPTOR.read_text(encoding="utf-8")
+    for required in (
+        "type: job",
+        "name: felunyx-fail",
+        "interface: python",
+        "script: main.py",
+        "noconfig: true",
+    ):
+        assert required in descriptor
+
+    spec = importlib.util.spec_from_file_location(
+        "felunyx_fail", FAILURE_MAIN
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.run() == (
+        "FelunyxInjectedFailure",
+        "Intentional Phase 2 installer failure injection",
+    )
+
+
+def test_failure_overlay_is_packaged_outside_production_config():
+    text = PKGBUILD.read_text(encoding="utf-8")
+    for source in (
+        "calamares-failure-settings.conf",
+        "felunyx-fail-module.desc",
+        "felunyx-fail-main.py",
+    ):
+        assert source in text
+    assert f"{INSTALLED_OVERLAY}/settings.conf" in text
+    assert (
+        f"{INSTALLED_OVERLAY}/modules/"
+        "felunyx-fail/module.desc"
+    ) in text
+    assert (
+        f"{INSTALLED_OVERLAY}/modules/"
+        "felunyx-fail/main.py"
+    ) in text
+    assert '"$pkgdir/etc/calamares/settings.conf"' not in text
+
+
+def test_installer_driver_classifies_expected_failure_and_retains_logs():
+    text = DRIVER.read_text(encoding="utf-8")
+    for required in (
+        "opt/felunyx/install-mode/raw",
+        "{'success', 'failure'}",
+        f"{INSTALLED_OVERLAY}/settings.conf",
+        "'-c'",
+        "FelunyxInjectedFailure",
+        "/run/felunyx/installer-evidence",
+        "/root/.cache/calamares/session.log",
+        "/var/log/Calamares.log",
+        "installer-harness.log",
+    ):
+        assert required in text
+
+    tree = ast.parse(text, filename=str(DRIVER))
+    emitted_events = {
+        node.args[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "emit"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    }
+    assert {"start", "stage", "success", "failure", "blocked"} <= emitted_events
+
+    assert "unexpected success in failure mode" in text
+    assert "subprocess.Popen" in text
+    assert "preserve_logs()" in text
+    assert "systemctl" in text and "poweroff" in text
+
+
+def test_failure_overlay_never_replaces_normal_settings():
+    package = PKGBUILD.read_text(encoding="utf-8")
+    driver = DRIVER.read_text(encoding="utf-8")
+    assert "/etc/calamares/settings.conf" not in package
+    assert "['sudo', '-E', 'calamares', '-d']" in driver
+    assert "FAILURE_SETTINGS" in driver
