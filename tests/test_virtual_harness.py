@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -10,6 +11,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures" / "evidence"
+LOADER_HELPER = ROOT / "tests" / "boot" / "set_loader_oneshot.py"
+SYSTEMD_BOOT_GUID = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
 
 
 def load_fixture(name: str) -> dict:
@@ -42,6 +45,104 @@ def run_live_payload(payload: dict, tmp_path: Path, kernel: str = "zen"):
         check=False,
     )
     return result, output
+
+
+def install_fake_virt_fw_tools(tmp_path: Path) -> tuple[Path, Path]:
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    capture = tmp_path / "set-json-capture.json"
+
+    virt_fw_vars = bindir / "virt-fw-vars"
+    virt_fw_vars.write_text(
+        """#!/usr/bin/env python3
+import json
+import os
+import shutil
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+def value(flag):
+    return args[args.index(flag) + 1]
+
+if '--set-json' in args:
+    payload = Path(value('--set-json'))
+    Path(os.environ['FELUNYX_FAKE_CAPTURE']).write_text(
+        payload.read_text(encoding='utf-8'), encoding='utf-8'
+    )
+    shutil.copyfile(value('--input'), value('--output'))
+    raise SystemExit(0)
+
+if '--output-json' in args:
+    entry = os.environ['FELUNYX_FAKE_READBACK_ENTRY']
+    data = (entry + '\\0').encode('utf-16-le').hex()
+    result = {
+        'variables': [{
+            'name': 'LoaderEntryOneShot',
+            'guid': '4a67b082-0a4c-41cf-b6c7-440b29bb8c4f',
+            'attr': 7,
+            'data': data,
+        }]
+    }
+    Path(value('--output-json')).write_text(
+        json.dumps(result), encoding='utf-8'
+    )
+    raise SystemExit(0)
+
+raise SystemExit(2)
+""",
+        encoding="utf-8",
+    )
+    virt_fw_vars.chmod(0o755)
+
+    dpkg_query = bindir / "dpkg-query"
+    dpkg_query.write_text(
+        "#!/bin/sh\nprintf '%s\\n' '24.1.1-2'\n",
+        encoding="utf-8",
+    )
+    dpkg_query.chmod(0o755)
+    return bindir, capture
+
+
+def run_loader_helper(
+    tmp_path: Path,
+    entry: str,
+    *,
+    readback_entry: str | None = None,
+    with_tools: bool = True,
+):
+    vars_path = tmp_path / "OVMF_VARS.fd"
+    vars_path.write_bytes(b"test-varstore")
+    report = tmp_path / "loader-entry-oneshot.json"
+    env = os.environ.copy()
+
+    if with_tools:
+        bindir, capture = install_fake_virt_fw_tools(tmp_path)
+        env["PATH"] = str(bindir) + os.pathsep + env.get("PATH", "")
+        env["FELUNYX_FAKE_CAPTURE"] = str(capture)
+        env["FELUNYX_FAKE_READBACK_ENTRY"] = readback_entry or entry
+    else:
+        capture = tmp_path / "unused-capture.json"
+        env["PATH"] = ""
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(LOADER_HELPER),
+            "--vars",
+            str(vars_path),
+            "--entry",
+            entry,
+            "--report",
+            str(report),
+        ],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return result, report, capture
 
 
 def test_installer_uses_accessibility_not_coordinates():
@@ -175,3 +276,70 @@ def test_live_evidence_requires_active_plasma_wayland(tmp_path: Path):
     assert result.returncode != 0
     assert "active Plasma Wayland session is absent" in result.stderr
     assert not output.exists()
+
+
+def test_live_kernel_selection_removes_timed_qmp_navigation():
+    text = Path("tools/felunyx-run-vm").read_text(encoding="utf-8")
+    assert "qmp_sendkey.py" not in text
+    assert "sleep 2" not in text
+    assert " down ret" not in text
+    assert "set_loader_oneshot.py" in text
+    assert "loader-entry-oneshot.json" in text
+
+
+def test_loader_oneshot_rejects_unknown_entry(tmp_path: Path):
+    result, report, _ = run_loader_helper(
+        tmp_path, "felunyx-linux-debug.conf"
+    )
+
+    assert result.returncode == 64
+    assert "unsupported loader entry" in result.stderr
+    assert not report.exists()
+
+
+def test_loader_oneshot_rejects_missing_tool(tmp_path: Path):
+    result, report, _ = run_loader_helper(
+        tmp_path, "felunyx-linux-lts.conf", with_tools=False
+    )
+
+    assert result.returncode != 0
+    assert "virt-fw-vars is required" in result.stderr
+    assert not report.exists()
+
+
+def test_loader_oneshot_writes_hex_payload_and_verified_report(tmp_path: Path):
+    entry = "felunyx-linux-lts.conf"
+    result, report, capture = run_loader_helper(tmp_path, entry)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(capture.read_text(encoding="utf-8"))
+    variable = payload["variables"][0]
+    assert variable == {
+        "name": "LoaderEntryOneShot",
+        "guid": SYSTEMD_BOOT_GUID,
+        "attr": 7,
+        "data": (entry + "\0").encode("utf-16-le").hex(),
+    }
+
+    recorded = json.loads(report.read_text(encoding="utf-8"))
+    assert recorded == {
+        "schema": 1,
+        "tool_package": "python3-virt-firmware",
+        "tool_version": "24.1.1-2",
+        "guid": SYSTEMD_BOOT_GUID,
+        "variable": "LoaderEntryOneShot",
+        "entry": entry,
+        "verified": True,
+    }
+
+
+def test_loader_oneshot_rejects_readback_mismatch(tmp_path: Path):
+    result, report, _ = run_loader_helper(
+        tmp_path,
+        "felunyx-linux-lts.conf",
+        readback_entry="felunyx-linux-zen.conf",
+    )
+
+    assert result.returncode != 0
+    assert "LoaderEntryOneShot readback mismatch" in result.stderr
+    assert not report.exists()
