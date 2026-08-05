@@ -89,6 +89,13 @@ def test_guest_live_collector_declares_schema2_session_state():
     ).read_text(encoding="utf-8")
     assert "After=graphical.target display-manager.service" in unit
     assert "Wants=display-manager.service" in unit
+    assert "WantedBy=graphical.target" in unit
+
+    pkgbuild = Path("packages/felunyx-identity/PKGBUILD").read_text(
+        encoding="utf-8"
+    )
+    assert "systemd/system/graphical.target.wants" in pkgbuild
+    assert "systemd/system/multi-user.target.wants" not in pkgbuild
 
 
 def test_grub_has_serial_and_stable_zen_default():
