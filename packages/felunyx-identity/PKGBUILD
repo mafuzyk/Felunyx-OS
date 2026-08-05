@@ -1,11 +1,11 @@
 pkgname=felunyx-identity
 pkgver=0.1.0
-pkgrel=4
+pkgrel=5
 pkgdesc='Felunyx OS identity and immutable build provenance'
 arch=('any')
 license=('GPL-3.0-or-later')
-source=('os-release' 'felunyx-evidence' 'felunyx-installed-evidence' 'felunyx-evidence.service')
-sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP')
+source=('os-release' 'felunyx-evidence' 'felunyx-installed-evidence' 'felunyx-prepare-grub-oneshot' 'felunyx-evidence.service')
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 package() {
   : "${FELUNYX_SOURCE_COMMIT:?FELUNYX_SOURCE_COMMIT is required}"
@@ -16,6 +16,7 @@ package() {
   ln -s ../usr/lib/felunyx/os-release "$pkgdir/etc/os-release"
   install -Dm0755 "$srcdir/felunyx-evidence" "$pkgdir/usr/lib/felunyx/felunyx-evidence"
   install -Dm0755 "$srcdir/felunyx-installed-evidence" "$pkgdir/usr/lib/felunyx/felunyx-installed-evidence"
+  install -Dm0755 "$srcdir/felunyx-prepare-grub-oneshot" "$pkgdir/usr/lib/felunyx/felunyx-prepare-grub-oneshot"
   install -Dm0644 "$srcdir/felunyx-evidence.service" "$pkgdir/usr/lib/systemd/system/felunyx-evidence.service"
   ln -s ../felunyx-evidence.service "$pkgdir/usr/lib/systemd/system/graphical.target.wants/felunyx-evidence.service"
   python - "$pkgdir/usr/lib/felunyx/build-info.json" <<'PY'
