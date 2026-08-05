@@ -6,13 +6,16 @@ on:
       artifact_run_id:
         description: Successful Build Phase 2 ISO workflow run ID
         required: true
+  push:
+    branches: [ fix/phase-2-virtual-gate-hardening ]
+    paths: [ docs/evidence/phase-2-virtual-trigger.json ]
 
 permissions:
   actions: read
   contents: read
 
 concurrency:
-  group: virtual-${{ github.workflow }}-${{ inputs.artifact_run_id }}
+  group: virtual-${{ github.workflow }}-${{ github.ref }}-${{ inputs.artifact_run_id || github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -29,15 +32,74 @@ jobs:
           persist-credentials: false
           path: controller
 
+      - name: Resolve explicit virtual request
+        id: virtual_request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_ARTIFACT_RUN_ID: ${{ inputs.artifact_run_id }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          event_name = os.environ["EVENT_NAME"]
+          expected_source_commit = ""
+          if event_name == "workflow_dispatch":
+              raw_run_id = os.environ.get("MANUAL_ARTIFACT_RUN_ID", "")
+          elif event_name == "push":
+              marker = Path(
+                  "controller/docs/evidence/phase-2-virtual-trigger.json"
+              )
+              try:
+                  request = json.loads(marker.read_text(encoding="utf-8"))
+              except (OSError, json.JSONDecodeError) as exc:
+                  raise SystemExit(f"invalid virtual trigger marker: {exc}")
+              if not isinstance(request, dict) or request.get("schema") != 1:
+                  raise SystemExit("virtual trigger marker schema must be 1")
+              raw_run_id = request.get("artifact_run_id")
+              expected_source_commit = request.get(
+                  "expected_source_commit", ""
+              )
+              if not isinstance(expected_source_commit, str) or not re.fullmatch(
+                  r"[0-9a-f]{40}", expected_source_commit
+              ):
+                  raise SystemExit(
+                      "virtual trigger expected_source_commit must be a 40-character SHA"
+                  )
+          else:
+              raise SystemExit(f"unsupported workflow event: {event_name}")
+
+          try:
+              artifact_run_id = int(raw_run_id)
+          except (TypeError, ValueError) as exc:
+              raise SystemExit("artifact_run_id must be a positive integer") from exc
+          if artifact_run_id <= 0:
+              raise SystemExit("artifact_run_id must be a positive integer")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"artifact_run_id={artifact_run_id}\n")
+              handle.write(
+                  f"expected_source_commit={expected_source_commit}\n"
+              )
+          print(f"requested artifact run: {artifact_run_id}")
+          if expected_source_commit:
+              print(f"requested artifact source: {expected_source_commit}")
+          PY
+
       - name: Download trusted ISO artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          run-id: ${{ inputs.artifact_run_id }}
+          run-id: ${{ steps.virtual_request.outputs.artifact_run_id }}
           github-token: ${{ github.token }}
           path: artifacts
 
       - name: Resolve artifact source and ISO
         id: artifact_source
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ steps.virtual_request.outputs.expected_source_commit }}
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
@@ -74,6 +136,13 @@ jobs:
               )
 
           source_commit = commits[0]
+          expected = os.environ.get("EXPECTED_SOURCE_COMMIT", "")
+          if expected and source_commit != expected:
+              raise SystemExit(
+                  "requested source commit does not match artifact: "
+                  f"requested {expected}, observed {source_commit}"
+              )
+
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
               handle.write(f"source_commit={source_commit}\n")
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as handle:
