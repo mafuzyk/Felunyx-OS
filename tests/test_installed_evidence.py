@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import json
 import subprocess
 import sys
@@ -227,9 +226,11 @@ def test_guest_installed_collector_is_packaged_and_read_only():
     )
 
 
-def test_installed_boot_uses_strict_assertion_and_keeps_lts_blocked():
+def test_installed_boot_uses_strict_assertion_and_semantic_lts_handoff():
     text = Path("tools/felunyx-run-vm").read_text(encoding="utf-8")
     assert "assert_installed_system.py" in text
     assert "installed-evidence.json" in text
-    assert "installed LTS selection is blocked" in text
+    assert "--prepare-next" in text
+    assert "assert_grub_oneshot.py" in text
+    assert "installed LTS selection is blocked" not in text
     assert "boot-installed is blocked until strict installed evidence" not in text
