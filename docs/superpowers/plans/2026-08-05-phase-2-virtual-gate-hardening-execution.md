@@ -181,3 +181,74 @@ The preparer changes only GRUB's one-boot `next_entry` state. It does not change
 - **R — Remote:** Task 4 parser, selector policy, one-shot state contract, package/service integration, harness handoff, and static tests passed.
 - **V — Virtual:** pending execution of Zen preparation and the subsequent LTS boot on a matching installed disk.
 - **H — Hardware:** not tested.
+
+## Task 5 — Inject and retain a controlled Calamares failure
+
+**Status:** implemented and validated remotely on 2026-08-05.
+
+Implemented:
+
+- an isolated Calamares settings overlay under `/usr/lib/felunyx/tests/calamares-failure/`;
+- the production show and execution sequence with exactly one inserted `felunyx-fail` job after `bootloader` and before `umount`;
+- a Python job returning the exact `FelunyxInjectedFailure` classification;
+- explicit `success` and `failure` fw_cfg modes;
+- production Calamares invocation unchanged in success mode;
+- alternate `-c` settings only in failure mode;
+- separate `start`, `stage`, `success`, `failure`, and `blocked` events;
+- rejection of accidental success, unrelated failure, process crash, inaccessible AT-SPI object, and timeout;
+- retention of harness, Calamares debug, session, and system logs before poweroff.
+
+### Narrow execution correction
+
+The first GREEN source run reached 112 passing tests and failed only because one test searched for a same-line `emit('failure'` substring. The test was strengthened to inspect Python AST call arguments and require all five event classes structurally, without changing production behavior.
+
+The exact AT-SPI names presented by the Calamares failure dialog remain runtime assumptions until a matching ISO executes this scenario. Source validation cannot prove that accessibility surface.
+
+### TDD evidence
+
+- RED run #108 (`31005042763`): 5 new failures, 108 prior tests passed; overlay, module, package isolation, and driver classification were absent.
+- Intermediate run #113 (`31005254376`): 112 tests passed; one formatting-dependent test failed.
+- GREEN run #114 (`31005420817`): 113 tests passed in 3.16 seconds.
+
+### Validation level
+
+- **R — Remote:** Task 5 overlay, module contract, package isolation, event classification, log-retention source paths, and static tests passed.
+- **V — Virtual:** pending Calamares execution, AT-SPI observation, expected failure, transported logs, and artifact review on a matching ISO.
+- **H — Hardware:** not tested.
+
+## Task 6 — Make QEMU scenarios explicit and fail closed
+
+**Status:** implemented and validated remotely on 2026-08-05.
+
+Implemented:
+
+- independent `boot-live`, `install`, `boot-installed`, and `boot-bios` commands;
+- mandatory `success` or `failure` installation mode;
+- fresh-disk enforcement for both installation paths;
+- atomic `scenario-result.json` records with `pass`, `fail`, `blocked`, or `not-run` vocabulary;
+- exit traps that preserve available evidence and never convert interruption into pass;
+- scenario-owned OVMF variables, QMP socket, serial log, stderr log, and guest-evidence stream;
+- read-only QMP status/version diagnostics;
+- a dedicated virtio-serial port named `org.felunyx.evidence`;
+- Base64 log transport with safe-name, byte-count, and SHA-256 verification before host extraction;
+- exact success/failure installer outcome assertions;
+- required actionable logs for controlled failure;
+- separate strict BIOS evidence that requires `uefi=false` while retaining every other live-session assertion;
+- operational documentation for manual reproduction and evidence review.
+
+### Narrow execution correction
+
+Task 5 originally retained logs only inside the volatile live guest. Task 6 adds a dedicated virtio-serial transport so retained logs become host artifacts before the guest powers off. This avoids guest mounts and does not alter the installed target.
+
+`boot-bios` remains best-effort. Its scenario result is structured, but it cannot replace or weaken UEFI requirements.
+
+### TDD evidence
+
+- RED run #118 (`31005699837`): 12 new failures, 113 prior tests passed; result writer, installer outcome validator, BIOS mode, transport, and scenario lifecycle were absent.
+- GREEN run #122 (`31006272291`): 125 tests passed in 8.59 seconds.
+
+### Validation level
+
+- **R — Remote:** Task 6 CLI contracts, atomic results, strict outcome/log parsing, BIOS policy, shell syntax/lint, diagnostics paths, and static tests passed.
+- **V — Virtual:** pending runtime execution of all commands against a matching trusted artifact.
+- **H — Hardware:** not tested.
