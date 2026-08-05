@@ -113,8 +113,11 @@ PY
   boot-installed)
     [[ -f $disk && $kernel =~ ^(zen|lts)$ ]] || \
       felunyx_die 'boot-installed needs disk and kernel'
-    felunyx_die \
-      'boot-installed is blocked until strict installed evidence and GRUB one-shot selection are implemented'
+    if [[ $kernel == lts ]]; then
+      felunyx_die \
+        'installed LTS selection is blocked until verified GRUB one-shot support is implemented'
+    fi
+    args+=(-drive "file=$disk,format=qcow2,if=virtio")
     ;;
 esac
 
@@ -130,12 +133,20 @@ if [[ $cmd == install ]]; then
   wait "$pid" || true
   grep -q '"event": "success"' "$serial" || \
     felunyx_die "semantic installer did not report success; see $serial"
-else
+elif [[ $cmd == boot-live ]]; then
   python3 "$ROOT/tests/boot/expect_serial.py" \
     --log "$serial" \
     --timeout "$timeout" \
     --kernel "$kernel" \
     --output "$artifacts/live-evidence.json"
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+else
+  python3 "$ROOT/tests/boot/assert_installed_system.py" \
+    --log "$serial" \
+    --timeout "$timeout" \
+    --kernel "$kernel" \
+    --output "$artifacts/installed-evidence.json"
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
 fi
