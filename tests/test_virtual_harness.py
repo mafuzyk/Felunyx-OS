@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 import sys
@@ -55,6 +56,39 @@ def test_evidence_is_opt_in_and_serialized():
     assert "qemu_fw_cfg" in text and "FELUNYX_EVIDENCE=" in text
     unit = Path("packages/felunyx-identity/felunyx-evidence.service").read_text()
     assert "Type=oneshot" in unit
+
+
+def test_guest_live_collector_declares_schema2_session_state():
+    path = Path("packages/felunyx-identity/felunyx-evidence")
+    text = path.read_text(encoding="utf-8")
+    tree = ast.parse(text, filename=str(path))
+
+    has_schema2 = any(
+        isinstance(node, ast.Dict)
+        and any(
+            isinstance(key, ast.Constant)
+            and key.value == "schema"
+            and isinstance(value, ast.Constant)
+            and value.value == 2
+            for key, value in zip(node.keys, node.values)
+        )
+        for node in ast.walk(tree)
+    )
+    assert has_schema2
+    for required in (
+        "loginctl",
+        "/sys/firmware/efi",
+        "/usr/lib/felunyx/build-info.json",
+        "/usr/share/wayland-sessions/plasma.desktop",
+        "sshd.socket",
+    ):
+        assert required in text
+
+    unit = Path(
+        "packages/felunyx-identity/felunyx-evidence.service"
+    ).read_text(encoding="utf-8")
+    assert "After=graphical.target display-manager.service" in unit
+    assert "Wants=display-manager.service" in unit
 
 
 def test_grub_has_serial_and_stable_zen_default():
