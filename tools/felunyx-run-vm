@@ -8,62 +8,199 @@ source "$ROOT/tools/lib/common.sh"
 usage() {
   cat <<EOF
 usage: ${0##*/} boot-live --iso ISO --kernel zen|lts --artifacts DIR [--timeout N]
-       ${0##*/} install --iso ISO --disk DISK --artifacts DIR [--timeout N]
+       ${0##*/} install --iso ISO --disk DISK --mode success|failure --artifacts DIR [--timeout N]
        ${0##*/} boot-installed --disk DISK --kernel zen|lts --artifacts DIR [--prepare-next lts] [--timeout N]
+       ${0##*/} boot-bios --iso ISO --artifacts DIR [--timeout N]
 EOF
 }
 
+usage_error() {
+  printf '%s\n' "$1" >&2
+  usage >&2
+  exit 64
+}
+
 cmd=${1:-}
-shift || true
+[[ -n $cmd ]] || usage_error 'scenario command is required'
+shift
+
 iso=''
 disk=''
 kernel=''
+mode=''
 artifacts=''
 prepare_next=''
 timeout=600
 
 while (($#)); do
   case $1 in
-    --iso) iso=$2; shift 2 ;;
-    --disk) disk=$2; shift 2 ;;
-    --kernel) kernel=$2; shift 2 ;;
-    --artifacts) artifacts=$2; shift 2 ;;
-    --prepare-next) prepare_next=$2; shift 2 ;;
-    --timeout) timeout=$2; shift 2 ;;
-    *) usage >&2; exit 64 ;;
+    --iso|--disk|--kernel|--mode|--artifacts|--prepare-next|--timeout)
+      (($# >= 2)) || usage_error "missing value for $1"
+      option=$1
+      value=$2
+      shift 2
+      case $option in
+        --iso) iso=$value ;;
+        --disk) disk=$value ;;
+        --kernel) kernel=$value ;;
+        --mode) mode=$value ;;
+        --artifacts) artifacts=$value ;;
+        --prepare-next) prepare_next=$value ;;
+        --timeout) timeout=$value ;;
+      esac
+      ;;
+    *) usage_error "unknown argument: $1" ;;
   esac
 done
 
-[[ $cmd =~ ^(boot-live|install|boot-installed)$ ]] || {
-  usage >&2
-  exit 64
-}
-if [[ -n $prepare_next ]]; then
-  [[ $cmd == boot-installed && $kernel == zen && $prepare_next == lts ]] || {
-    printf '%s\n' \
-      '--prepare-next lts is valid only for boot-installed --kernel zen' >&2
-    exit 64
-  }
-fi
-[[ -n $artifacts ]] || felunyx_die 'artifacts directory required'
+[[ $timeout =~ ^[1-9][0-9]*$ ]] || usage_error 'timeout must be a positive integer'
+[[ -n $artifacts ]] || usage_error 'artifacts directory is required'
+
+case $cmd in
+  boot-live)
+    [[ -f $iso ]] || usage_error 'boot-live ISO does not exist'
+    [[ $kernel =~ ^(zen|lts)$ ]] || usage_error 'boot-live kernel must be zen or lts'
+    [[ -z $mode && -z $disk && -z $prepare_next ]] || usage_error 'boot-live received incompatible arguments'
+    scenario="live-$kernel"
+    ;;
+  install)
+    [[ -f $iso ]] || usage_error 'install ISO does not exist'
+    [[ -n $disk ]] || usage_error 'install disk path is required'
+    [[ $mode =~ ^(success|failure)$ ]] || usage_error 'install mode must be success or failure'
+    [[ -z $kernel && -z $prepare_next ]] || usage_error 'install received incompatible arguments'
+    if [[ $mode == failure && -e $disk ]]; then
+      usage_error 'failure installation disk already exists'
+    fi
+    [[ ! -e $disk ]] || usage_error 'success installation disk already exists'
+    scenario=install
+    [[ $mode == failure ]] && scenario=failure-injection
+    kernel=zen
+    ;;
+  boot-installed)
+    [[ -f $disk ]] || usage_error 'boot-installed disk does not exist'
+    [[ $kernel =~ ^(zen|lts)$ ]] || usage_error 'boot-installed kernel must be zen or lts'
+    [[ -z $mode && -z $iso ]] || usage_error 'boot-installed received incompatible arguments'
+    if [[ -n $prepare_next ]]; then
+      [[ $kernel == zen && $prepare_next == lts ]] || \
+        usage_error '--prepare-next lts is valid only with --kernel zen'
+    fi
+    scenario="installed-$kernel"
+    ;;
+  boot-bios)
+    [[ -f $iso ]] || usage_error 'boot-bios ISO does not exist'
+    [[ -z $disk && -z $kernel && -z $mode && -z $prepare_next ]] || \
+      usage_error 'boot-bios received incompatible arguments'
+    scenario=bios
+    kernel=zen
+    ;;
+  *) usage_error "unsupported scenario command: $cmd" ;;
+esac
+
 mkdir -p "$artifacts"
+result="$artifacts/scenario-result.json"
+[[ ! -e $result ]] || usage_error 'scenario result already exists'
+
+started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+serial="$artifacts/serial.log"
+qmp="$artifacts/qmp.sock"
+qmp_diagnostics="$artifacts/qmp-diagnostics.json"
+qemu_stderr="$artifacts/qemu.stderr.log"
+evidence_stream="$artifacts/guest-evidence.stream"
+vars="$artifacts/OVMF_VARS.fd"
+pid=''
+result_written=false
+
+rm -f "$serial" "$qmp" "$qmp_diagnostics" "$qemu_stderr" \
+  "$evidence_stream" "$vars"
+
+collect_evidence() {
+  evidence_args=()
+  local key path relative
+  while (($#)); do
+    key=$1
+    path=$2
+    shift 2
+    if [[ -e $path ]]; then
+      relative=${path#"$artifacts"/}
+      evidence_args+=(--evidence "$key=$relative")
+    fi
+  done
+}
+
+write_result() {
+  local status=$1
+  local message=$2
+  collect_evidence \
+    serial "$serial" \
+    qemu_stderr "$qemu_stderr" \
+    qmp_diagnostics "$qmp_diagnostics" \
+    ovmf_vars "$vars" \
+    guest_evidence "$evidence_stream" \
+    loader_entry "$artifacts/loader-entry-oneshot.json" \
+    live "$artifacts/live-evidence.json" \
+    installed "$artifacts/installed-evidence.json" \
+    grub_next "$artifacts/grub-next.json" \
+    installer_outcome "$artifacts/installer-outcome.json" \
+    guest_logs "$artifacts/guest-logs"
+  python3 "$ROOT/tests/boot/write_scenario_result.py" \
+    --output "$result" \
+    --scenario "$scenario" \
+    --status "$status" \
+    --started-at "$started_at" \
+    --finished-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --message "$message" \
+    "${evidence_args[@]}"
+  result_written=true
+}
+
+preserve_diagnostics() {
+  if [[ -S $qmp ]]; then
+    python3 "$ROOT/tests/boot/qmp_diagnostics.py" \
+      --socket "$qmp" \
+      --output "$qmp_diagnostics" \
+      --timeout 3 || true
+  fi
+}
+
+stop_qemu() {
+  if [[ -n $pid ]]; then
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    pid=''
+  fi
+}
+
+wait_for_qemu_exit() {
+  local limit=$1
+  local deadline=$((SECONDS + limit))
+  while [[ -n $pid ]] && kill -0 "$pid" 2>/dev/null; do
+    ((SECONDS < deadline)) || return 1
+    sleep 1
+  done
+  if [[ -n $pid ]]; then
+    wait "$pid"
+    pid=''
+  fi
+}
+
+on_exit() {
+  local status=$?
+  trap - EXIT INT TERM
+  set +e
+  preserve_diagnostics
+  stop_qemu
+  if [[ $result_written != true ]]; then
+    write_result fail "scenario exited with status $status" >/dev/null 2>&1 || true
+  fi
+  exit "$status"
+}
+
+trap on_exit EXIT
+trap 'exit 130' INT TERM
 
 for command in qemu-system-x86_64 python3; do
   felunyx_require_command "$command"
 done
-
-ovmf=$(find /usr/share/edk2 /usr/share/OVMF \
-  -type f -name 'OVMF_CODE*.fd' -print -quit 2>/dev/null || true)
-[[ -n $ovmf ]] || felunyx_die 'OVMF_CODE firmware not found'
-vars_src=$(find /usr/share/edk2 /usr/share/OVMF \
-  -type f -name 'OVMF_VARS*.fd' -print -quit 2>/dev/null || true)
-[[ -n $vars_src ]] || felunyx_die 'OVMF_VARS firmware not found'
-
-vars="$artifacts/OVMF_VARS.fd"
-cp "$vars_src" "$vars"
-serial="$artifacts/${cmd}-${kernel:-default}.log"
-qmp="$artifacts/qmp.sock"
-rm -f "$qmp" "$serial"
 
 accel=tcg
 cpu=max
@@ -73,7 +210,6 @@ if [[ -r /dev/kvm && -w /dev/kvm ]]; then
 fi
 
 args=(
-  -machine "q35,accel=$accel"
   -cpu "$cpu"
   -smp 2
   -m 4096
@@ -81,90 +217,121 @@ args=(
   -serial "file:$serial"
   -qmp "unix:$qmp,server=on,wait=off"
   -no-reboot
-  -drive "if=pflash,format=raw,readonly=on,file=$ovmf"
-  -drive "if=pflash,format=raw,file=$vars"
   -fw_cfg "name=opt/felunyx/evidence,string=1"
+  -device "virtio-serial-pci,id=felunyx_serial"
+  -chardev "file,id=felunyx_evidence,path=$evidence_stream"
+  -device "virtserialport,bus=felunyx_serial.0,chardev=felunyx_evidence,name=org.felunyx.evidence"
 )
+
+configure_uefi() {
+  local ovmf vars_src
+  ovmf=$(find /usr/share/edk2 /usr/share/OVMF \
+    -type f -name 'OVMF_CODE*.fd' -print -quit 2>/dev/null || true)
+  [[ -n $ovmf ]] || felunyx_die 'OVMF_CODE firmware not found'
+  vars_src=$(find /usr/share/edk2 /usr/share/OVMF \
+    -type f -name 'OVMF_VARS*.fd' -print -quit 2>/dev/null || true)
+  [[ -n $vars_src ]] || felunyx_die 'OVMF_VARS firmware not found'
+  cp "$vars_src" "$vars"
+  args=(
+    -machine "q35,accel=$accel"
+    "${args[@]}"
+    -drive "if=pflash,format=raw,readonly=on,file=$ovmf"
+    -drive "if=pflash,format=raw,file=$vars"
+  )
+}
+
+set_live_entry() {
+  local selected_kernel=$1
+  python3 "$ROOT/tests/boot/set_loader_oneshot.py" \
+    --vars "$vars" \
+    --entry "felunyx-linux-${selected_kernel}.conf" \
+    --report "$artifacts/loader-entry-oneshot.json"
+}
 
 case $cmd in
   boot-live)
-    [[ -f $iso && $kernel =~ ^(zen|lts)$ ]] || \
-      felunyx_die 'boot-live needs ISO and kernel'
-    loader_report="$artifacts/loader-entry-oneshot.json"
-    python3 "$ROOT/tests/boot/set_loader_oneshot.py" \
-      --vars "$vars" \
-      --entry "felunyx-linux-${kernel}.conf" \
-      --report "$loader_report"
-    python3 - "$loader_report" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-if report.get("verified") is not True:
-    raise SystemExit("LoaderEntryOneShot report is not verified")
-PY
+    configure_uefi
+    set_live_entry "$kernel"
     args+=(-cdrom "$iso" -boot d)
     ;;
   install)
-    [[ -f $iso && -n $disk ]] || \
-      felunyx_die 'install needs ISO and disk path'
     felunyx_require_command qemu-img
-    [[ -e $disk ]] || qemu-img create -f qcow2 "$disk" 64G
+    qemu-img create -f qcow2 "$disk" 64G
+    configure_uefi
+    set_live_entry zen
     args+=(
       -cdrom "$iso"
       -boot d
       -drive "file=$disk,format=qcow2,if=virtio"
       -fw_cfg "name=opt/felunyx/autoinstall,string=1"
+      -fw_cfg "name=opt/felunyx/install-mode,string=$mode"
     )
-    kernel=zen
     ;;
   boot-installed)
-    [[ -f $disk && $kernel =~ ^(zen|lts)$ ]] || \
-      felunyx_die 'boot-installed needs disk and kernel'
+    configure_uefi
     args+=(-drive "file=$disk,format=qcow2,if=virtio")
     if [[ $prepare_next == lts ]]; then
-      args+=(
-        -fw_cfg "name=opt/felunyx/grub-next,string=linux-lts"
-      )
+      args+=(-fw_cfg "name=opt/felunyx/grub-next,string=linux-lts")
     fi
+    ;;
+  boot-bios)
+    args=(-machine "pc,accel=$accel" "${args[@]}" -cdrom "$iso" -boot d)
     ;;
 esac
 
-qemu-system-x86_64 "${args[@]}" &
-pid=$!
-trap 'kill "$pid" 2>/dev/null || true' EXIT INT TERM
+start_qemu() {
+  qemu-system-x86_64 "${args[@]}" 2>"$qemu_stderr" &
+  pid=$!
+}
 
-if [[ $cmd == install ]]; then
-  python3 "$ROOT/tests/boot/expect_serial.py" \
-    --log "$serial" \
-    --prefix FELUNYX_INSTALL= \
-    --timeout "$timeout" || true
-  wait "$pid" || true
-  grep -q '"event": "success"' "$serial" || \
-    felunyx_die "semantic installer did not report success; see $serial"
-elif [[ $cmd == boot-live ]]; then
-  python3 "$ROOT/tests/boot/expect_serial.py" \
-    --log "$serial" \
-    --timeout "$timeout" \
-    --kernel "$kernel" \
-    --output "$artifacts/live-evidence.json"
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
-else
-  python3 "$ROOT/tests/boot/assert_installed_system.py" \
-    --log "$serial" \
-    --timeout "$timeout" \
-    --kernel "$kernel" \
-    --output "$artifacts/installed-evidence.json"
-  if [[ $prepare_next == lts ]]; then
-    python3 "$ROOT/tests/boot/assert_grub_oneshot.py" \
+start_qemu
+
+case $cmd in
+  boot-live)
+    python3 "$ROOT/tests/boot/expect_serial.py" \
       --log "$serial" \
       --timeout "$timeout" \
-      --output "$artifacts/grub-next.json"
-  fi
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
-fi
+      --kernel "$kernel" \
+      --firmware uefi \
+      --output "$artifacts/live-evidence.json"
+    ;;
+  install)
+    python3 "$ROOT/tests/boot/assert_installer_outcome.py" \
+      --serial "$serial" \
+      --evidence-stream "$evidence_stream" \
+      --mode "$mode" \
+      --output "$artifacts/installer-outcome.json" \
+      --logs-dir "$artifacts/guest-logs" \
+      --timeout "$timeout"
+    preserve_diagnostics
+    wait_for_qemu_exit 90 || felunyx_die 'installer guest did not power off'
+    ;;
+  boot-installed)
+    python3 "$ROOT/tests/boot/assert_installed_system.py" \
+      --log "$serial" \
+      --timeout "$timeout" \
+      --kernel "$kernel" \
+      --output "$artifacts/installed-evidence.json"
+    if [[ $prepare_next == lts ]]; then
+      python3 "$ROOT/tests/boot/assert_grub_oneshot.py" \
+        --log "$serial" \
+        --timeout "$timeout" \
+        --output "$artifacts/grub-next.json"
+      preserve_diagnostics
+      wait_for_qemu_exit 90 || felunyx_die 'GRUB preparation guest did not power off'
+    fi
+    ;;
+  boot-bios)
+    python3 "$ROOT/tests/boot/expect_serial.py" \
+      --log "$serial" \
+      --timeout "$timeout" \
+      --kernel zen \
+      --firmware bios \
+      --output "$artifacts/live-evidence.json"
+    ;;
+esac
 
+preserve_diagnostics
+stop_qemu
+write_result pass "scenario completed with validated evidence"
 trap - EXIT INT TERM
