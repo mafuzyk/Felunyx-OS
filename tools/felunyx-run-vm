@@ -9,7 +9,7 @@ usage() {
   cat <<EOF
 usage: ${0##*/} boot-live --iso ISO --kernel zen|lts --artifacts DIR [--timeout N]
        ${0##*/} install --iso ISO --disk DISK --artifacts DIR [--timeout N]
-       ${0##*/} boot-installed --disk DISK --kernel zen|lts --artifacts DIR [--timeout N]
+       ${0##*/} boot-installed --disk DISK --kernel zen|lts --artifacts DIR [--prepare-next lts] [--timeout N]
 EOF
 }
 
@@ -19,6 +19,7 @@ iso=''
 disk=''
 kernel=''
 artifacts=''
+prepare_next=''
 timeout=600
 
 while (($#)); do
@@ -27,6 +28,7 @@ while (($#)); do
     --disk) disk=$2; shift 2 ;;
     --kernel) kernel=$2; shift 2 ;;
     --artifacts) artifacts=$2; shift 2 ;;
+    --prepare-next) prepare_next=$2; shift 2 ;;
     --timeout) timeout=$2; shift 2 ;;
     *) usage >&2; exit 64 ;;
   esac
@@ -36,6 +38,13 @@ done
   usage >&2
   exit 64
 }
+if [[ -n $prepare_next ]]; then
+  [[ $cmd == boot-installed && $kernel == zen && $prepare_next == lts ]] || {
+    printf '%s\n' \
+      '--prepare-next lts is valid only for boot-installed --kernel zen' >&2
+    exit 64
+  }
+fi
 [[ -n $artifacts ]] || felunyx_die 'artifacts directory required'
 mkdir -p "$artifacts"
 
@@ -113,11 +122,12 @@ PY
   boot-installed)
     [[ -f $disk && $kernel =~ ^(zen|lts)$ ]] || \
       felunyx_die 'boot-installed needs disk and kernel'
-    if [[ $kernel == lts ]]; then
-      felunyx_die \
-        'installed LTS selection is blocked until verified GRUB one-shot support is implemented'
-    fi
     args+=(-drive "file=$disk,format=qcow2,if=virtio")
+    if [[ $prepare_next == lts ]]; then
+      args+=(
+        -fw_cfg "name=opt/felunyx/grub-next,string=linux-lts"
+      )
+    fi
     ;;
 esac
 
@@ -147,6 +157,12 @@ else
     --timeout "$timeout" \
     --kernel "$kernel" \
     --output "$artifacts/installed-evidence.json"
+  if [[ $prepare_next == lts ]]; then
+    python3 "$ROOT/tests/boot/assert_grub_oneshot.py" \
+      --log "$serial" \
+      --timeout "$timeout" \
+      --output "$artifacts/grub-next.json"
+  fi
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
 fi
