@@ -146,3 +146,38 @@ The inspector performs only read operations. It does not install packages, regen
 - **R — Remote:** Task 3 schema, rejection policy, read-only source contract, package/service integration, and static tests passed.
 - **V — Virtual:** pending installed runtime evidence from a matching rebuilt ISO and disk.
 - **H — Hardware:** not tested.
+
+## Task 4 — Select installed LTS through verified GRUB one-shot state
+
+**Status:** implemented and validated remotely on 2026-08-05.
+
+Implemented:
+
+- parsing of the generated `grub.cfg` by structural `submenu` and `menuentry` blocks;
+- exact identification of the entry that loads `/boot/vmlinuz-linux-lts`;
+- rejection of missing IDs, duplicate LTS entries, numeric selectors, visible titles, and ambiguous selectors;
+- hierarchical selector construction as `submenu_id>entry_id`;
+- opt-in preparation restricted to installed systems and the exact `linux-lts` fw_cfg request;
+- `grub-reboot` invocation with `grub-editenv` readback of the exact `next_entry` value;
+- atomic `FELUNYX_GRUB_NEXT` evidence and explicit poweroff after verified preparation;
+- host-side rejection of malformed, duplicate, unverified, non-LTS, numeric, or non-hierarchical evidence;
+- `boot-installed --kernel zen --prepare-next lts` as the only preparation path;
+- an ordinary follow-up `boot-installed --kernel lts` on the same disk, with no QMP menu input.
+
+### Narrow execution correction
+
+Task 3's temporary assertion that installed LTS must remain blocked was superseded only after every Task 4 contract was present. The first GREEN attempt reached 107 passing tests and failed solely on that intentionally obsolete expectation. Updating the assertion did not remove or weaken the new GRUB one-shot tests.
+
+The preparer changes only GRUB's one-boot `next_entry` state. It does not change `GRUB_DEFAULT`, write a persistent default, use `grub-set-default`, or match a translated display title.
+
+### TDD evidence
+
+- RED run #100 (`31004290945`): 13 new failures, 95 prior tests passed; guest preparer, host assertion, package/service integration, and harness handoff were absent.
+- Intermediate run #105 (`31004629375`): 107 tests passed; one superseded Task 3 blocking assertion failed.
+- GREEN run #106 (`31004731971`): 108 tests passed in 3.62 seconds.
+
+### Validation level
+
+- **R — Remote:** Task 4 parser, selector policy, one-shot state contract, package/service integration, harness handoff, and static tests passed.
+- **V — Virtual:** pending execution of Zen preparation and the subsequent LTS boot on a matching installed disk.
+- **H — Hardware:** not tested.
