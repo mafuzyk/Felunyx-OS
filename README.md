@@ -1,6 +1,6 @@
 # Felunyx OS
 
-> **Status:** Phase 1 — foundation and architecture. No installable release exists yet.
+> **Status:** Phase 2 — reproducible ISO skeleton in active draft implementation. No installable release exists yet.
 
 Felunyx OS is an Arch-based Linux distribution built around visual authorship, comfort, transparency, reversible change, and a coherent desktop experience.
 
@@ -75,6 +75,7 @@ The detailed gates and deliverables are in [ROADMAP.md](ROADMAP.md).
 - [Architecture](ARCHITECTURE.md)
 - [Decision register](DECISIONS.md)
 - [Roadmap](ROADMAP.md)
+- [Phase 2 status](docs/status/phase-2-reproducible-iso.md)
 - [Documentation index](docs/README.md)
 - [Foundation design specification](docs/superpowers/specs/2026-08-03-felunyx-foundation-design.md)
 - [Contributing](CONTRIBUTING.md)
