@@ -2,6 +2,8 @@
 """Semantic Calamares driver for disposable Phase 2 virtual disks."""
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import shutil
@@ -14,6 +16,7 @@ import pyatspi
 
 LOG = Path('/run/felunyx/installer-harness.log')
 EVIDENCE_DIR = Path('/run/felunyx/installer-evidence')
+EVIDENCE_PORT = Path('/dev/virtio-ports/org.felunyx.evidence')
 DEBUG_LOG = Path('/run/felunyx/calamares-debug.log')
 AUTOINSTALL_MARKER = Path(
     '/sys/firmware/qemu_fw_cfg/by_name/opt/felunyx/autoinstall/raw'
@@ -64,16 +67,42 @@ def emit(event: str, **data: object) -> None:
         pass
 
 
+def transport_log(path: Path) -> None:
+    if not EVIDENCE_PORT.exists():
+        return
+    content = path.read_bytes()
+    record = {
+        'schema': 1,
+        'name': path.name,
+        'size': len(content),
+        'sha256': hashlib.sha256(content).hexdigest(),
+        'content_base64': base64.b64encode(content).decode('ascii'),
+    }
+    with EVIDENCE_PORT.open('w', encoding='utf-8') as handle:
+        handle.write(
+            'FELUNYX_INSTALL_LOG='
+            + json.dumps(record, sort_keys=True)
+            + '\n'
+        )
+        handle.flush()
+
+
 def preserve_logs() -> None:
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
     sources = (LOG, DEBUG_LOG, *CALAMARES_LOGS)
+    retained: list[Path] = []
     for source in sources:
         if not source.is_file():
             continue
         destination = EVIDENCE_DIR / source.name
-        if destination.exists() and destination.resolve() == source.resolve():
-            continue
-        shutil.copy2(source, destination)
+        if not (
+            destination.exists()
+            and destination.resolve() == source.resolve()
+        ):
+            shutil.copy2(source, destination)
+        retained.append(destination)
+    for path in retained:
+        transport_log(path)
 
 
 def walk(node):
