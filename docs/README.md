@@ -47,6 +47,7 @@ Root documents define the project-wide contract:
 
 - [Phase 1 foundation](status/phase-1-foundation.md)
 - [Phase 2 reproducible ISO](status/phase-2-reproducible-iso.md)
+- [Work Environments isolated preparation](status/work-environments-preparation.md)
 
 ## Documentation rules
 
