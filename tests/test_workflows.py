@@ -109,6 +109,20 @@ def test_virtual_executor_pins_ovmf_variable_tooling_and_records_version():
     assert "virtual/executor-packages.txt" in text
 
 
+def test_branch_local_virtual_trigger_is_explicit_and_dormant():
+    text = workflow("virtual-smoke.yml")
+    assert "push:" in text
+    assert "branches: [ fix/phase-2-virtual-gate-hardening ]" in text
+    assert "paths: [ docs/evidence/phase-2-virtual-trigger.json ]" in text
+    assert "id: virtual_request" in text
+    assert "docs/evidence/phase-2-virtual-trigger.json" in text
+    assert "artifact_run_id" in text
+    assert "expected_source_commit" in text
+    assert "run-id: ${{ steps.virtual_request.outputs.artifact_run_id }}" in text
+    assert "requested source commit does not match artifact" in text
+    assert not Path("docs/evidence/phase-2-virtual-trigger.json").exists()
+
+
 def test_virtual_workflow_checks_out_the_artifact_source_commit():
     text = workflow("virtual-smoke.yml")
     assert "id: artifact_source" in text
