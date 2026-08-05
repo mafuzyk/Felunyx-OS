@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 from pathlib import Path
 
@@ -99,14 +100,25 @@ def test_installer_driver_classifies_expected_failure_and_retains_logs():
         "/usr/lib/felunyx/tests/calamares-failure/settings.conf",
         "'-c'",
         "FelunyxInjectedFailure",
-        "emit('failure'",
-        "emit('blocked'",
         "/run/felunyx/installer-evidence",
         "/root/.cache/calamares/session.log",
         "/var/log/Calamares.log",
         "installer-harness.log",
     ):
         assert required in text
+
+    tree = ast.parse(text, filename=str(DRIVER))
+    emitted_events = {
+        node.args[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "emit"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    }
+    assert {"start", "stage", "success", "failure", "blocked"} <= emitted_events
 
     assert "unexpected success in failure mode" in text
     assert "subprocess.Popen" in text
