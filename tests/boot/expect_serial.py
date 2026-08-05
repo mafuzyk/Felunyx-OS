@@ -84,7 +84,7 @@ def has_active_plasma_session(sessions: object) -> bool:
     return False
 
 
-def validate_live(data: dict, kernel: str) -> None:
+def validate_live(data: dict, kernel: str, firmware: str) -> None:
     require_keys(data)
     require(data.get("schema") == 2, "live evidence schema must be 2")
     require(data.get("id") == "felunyx", "guest identity is not Felunyx")
@@ -94,7 +94,10 @@ def validate_live(data: dict, kernel: str) -> None:
         "running kernel is absent",
     )
     require(data.get("live") is True, "live marker is absent")
-    require(data.get("uefi") is True, "required UEFI boot was not observed")
+    if firmware == "uefi":
+        require(data.get("uefi") is True, "required UEFI boot was not observed")
+    else:
+        require(data.get("uefi") is False, "BIOS boot was not observed")
     require(data.get("build_metadata") is True, "build metadata is absent")
     require(data.get("graphical_target") is True, "graphical target is inactive")
     require(data.get("sddm") is True, "SDDM is inactive")
@@ -135,12 +138,15 @@ def main() -> int:
     parser.add_argument("--log", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--kernel", choices=("zen", "lts"), required=True)
+    parser.add_argument(
+        "--firmware", choices=("uefi", "bios"), default="uefi"
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
     try:
         payload = wait_for_payload(args.log, args.timeout)
-        validate_live(payload, args.kernel)
+        validate_live(payload, args.kernel, args.firmware)
         write_atomic(args.output, payload)
     except (OSError, TimeoutError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
