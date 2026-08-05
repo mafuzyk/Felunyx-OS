@@ -7,6 +7,7 @@ After=display-manager.service
 Type=oneshot
 TimeoutStartSec=150s
 ExecStart=/usr/lib/felunyx/felunyx-evidence
+ExecStart=/usr/lib/felunyx/felunyx-installed-evidence
 
 [Install]
 WantedBy=graphical.target
