@@ -101,6 +101,13 @@ def test_evidence_service_avoids_graphical_target_ordering_cycle():
     assert "systemd/system/multi-user.target.wants" not in pkgbuild
 
 
+def test_evidence_service_timeout_exceeds_session_wait_budget():
+    unit = Path(
+        "packages/felunyx-identity/felunyx-evidence.service"
+    ).read_text(encoding="utf-8")
+    assert "TimeoutStartSec=150s" in unit
+
+
 def test_grub_has_serial_and_stable_zen_default():
     text = Path("packages/felunyx-calamares-config/grub-default").read_text()
     assert "GRUB_TOP_LEVEL=/boot/vmlinuz-linux-zen" in text
