@@ -2,13 +2,15 @@
 
 **Date:** 2026-08-05
 
-**Status:** Approved conversationally for specification; implementation awaits review of this written document
+**Status:** Approved by Mafu on 2026-08-05; implementation plan written
 
 **Owning phase:** Phase 2 — Reproducible ISO Skeleton
 
 **Base:** `agent/phase-2-implementation` at `1f89d17b10c8e0b4965a7f8ebc5e4d509e5f637a`
 
 **Working branch:** `fix/phase-2-virtual-gate-hardening`
+
+**Implementation plan:** `docs/superpowers/plans/2026-08-05-phase-2-virtual-gate-hardening.md`
 
 ## 1. Purpose
 
@@ -38,7 +40,7 @@ The Phase 2 plan additionally requires semantic kernel selection, observable gra
 The current implementation has useful foundations but does not yet satisfy the full contract:
 
 1. `felunyx-evidence` reports graphical target, SDDM, NetworkManager, kernel, live state, identity, and SSH state.
-2. `expect_serial.py` currently rejects wrong identity, kernel, live state, or active SSH, but does not require graphical target, SDDM, NetworkManager, or an active Plasma Wayland session.
+2. `expect_serial.py` currently rejects wrong identity, kernel, live state, or active SSH, but does not require graphical target, SDDM, NetworkManager, or Plasma Wayland availability.
 3. Live LTS selection currently waits two seconds and sends `down` and `ret` through QMP. This depends on menu timing and ordering rather than an explicit entry identifier.
 4. Installed boots verify only the generic serial marker and running kernel. They do not prove installed GRUB, both kernel payloads, exact Btrfs layout, build metadata, or absence of live-only policy.
 5. The workflow groups multiple scenarios into large steps and uploads only matching log files. One early failure can prevent later scenarios and omit useful non-log evidence.
@@ -80,7 +82,7 @@ Advantages:
 Disadvantages:
 
 - requires a new ISO build when guest-side evidence changes;
-- adds focused test code and one host-side executor package for editing OVMF variables.
+- adds focused test code and a small executor dependency for editing OVMF variables.
 
 **Decision:** selected.
 
@@ -115,50 +117,42 @@ Common required fields:
 - running kernel and normalized variant (`zen` or `lts`);
 - `live` state;
 - `graphical_target`;
-- SDDM service state;
+- `sddm`;
+- Plasma Wayland session availability;
 - NetworkManager state;
 - SSH service and socket state;
 - boot mode identified as UEFI for required scenarios.
-
-Live evidence additionally records the active logind session selected for the live user, including session ID, user, state, type, class, service, desktop, and remote status, plus whether `plasmashell` is running in that session.
 
 Live assertions require:
 
 - `live: true`;
 - graphical target active;
 - SDDM active;
-- an active, local, graphical logind session for the live user;
-- session type `wayland`;
-- SDDM as the login service and Plasma/KDE as the declared desktop;
-- `plasmashell` running for that session;
+- an active local user session with `Type=wayland` and KDE/Plasma desktop identity;
+- Plasma Wayland session definition and executable available;
 - NetworkManager active;
 - SSH service and socket inactive;
 - requested kernel variant running.
-
-The collector waits for this live-session readiness up to the scenario timeout instead of emitting success immediately when only `graphical.target` becomes active. Missing session readiness is a failed scenario with retained diagnostics.
 
 Installed assertions require:
 
 - `live: false`;
 - requested kernel variant running;
-- graphical target and SDDM greeter active, without live autologin;
-- GRUB package and `/boot/grub/grub.cfg` present;
-- `/boot/vmlinuz-linux-zen` and `/boot/vmlinuz-linux-lts` present;
-- expected Felunyx build metadata present;
-- `/run/felunyx/live` absent;
+- GRUB package and generated configuration present;
+- Linux Zen and Linux LTS kernel payloads present;
+- expected build metadata present;
+- live marker absent;
 - live-only sudo and SDDM autologin policy absent;
 - `felunyx-iso-hooks` absent from the installed package set;
 - SSH service and socket inactive;
-- exact Btrfs subvolumes and mount points present:
-  - `@` mounted at `/`;
-  - `@home` mounted at `/home`;
-  - `@snapshots` mounted at `/.snapshots`;
-  - `@cache` mounted at `/var/cache`;
-  - `@log` mounted at `/var/log`;
-  - `@swap` validated only when swap was created;
-- Btrfs mounts include `compress=zstd:1`;
-- the ESP is mounted at `/boot/efi` with `umask=0077`;
-- a present `@swap` uses the approved swap mount policy.
+- Btrfs subvolume `@` mounted at `/`;
+- Btrfs subvolume `@home` mounted at `/home`;
+- Btrfs subvolume `@snapshots` mounted at `/.snapshots`;
+- Btrfs subvolume `@cache` mounted at `/var/cache`;
+- Btrfs subvolume `@log` mounted at `/var/log`;
+- conditional `@swap` recorded when swapfile support is selected;
+- `/boot/efi` mounted from the FAT32 ESP;
+- Btrfs mounts expose `compress=zstd:1` and EFI exposes `umask=0077` or its normalized equivalent.
 
 Missing fields, unknown values, malformed JSON, timeout, or mismatched expectations fail the scenario. They are never interpreted as pass.
 
@@ -171,15 +165,13 @@ For each VM invocation it creates a fresh writable copy of the OVMF variable sto
 - Zen: `felunyx-linux-zen.conf` when explicit selection is required;
 - LTS: `felunyx-linux-lts.conf`.
 
-The implementation uses the standard `LoaderEntryOneShot` variable in the systemd boot-loader vendor namespace. The host invokes Ubuntu 24.04's `virt-fw-vars` command from `python3-virt-firmware` as a separate process; the package is not added to the ISO and no library code is vendored or imported into Felunyx. The workflow records the installed package/tool version in scenario evidence.
+The implementation uses the standard `LoaderEntryOneShot` variable in the systemd boot-loader vendor namespace. Ubuntu 24.04's `python3-virt-firmware` package supplies `virt-fw-vars` for offline varstore modification. The helper must read the modified variable store back and confirm the requested identifier before QEMU launches.
 
-The helper writes the variable to the copied store, reads the store back, and confirms the exact requested entry identifier before QEMU launches.
-
-If the pinned executor cannot install the declared package or cannot create and verify the one-shot variable, the scenario is `blocked` and the workflow fails. It must not fall back silently to timed arrow keys.
+If the pinned executor cannot create and verify the one-shot variable, the scenario is `blocked` and the workflow fails. It must not fall back silently to timed arrow keys.
 
 The guest serial evidence must still confirm the running kernel. Variable injection alone is not success.
 
-### 5.3 Installed-system inspector
+### 5.3 Installed-system inspector and GRUB selection
 
 A focused guest-side inspector produces a structured installed-system payload rather than overloading the generic readiness marker.
 
@@ -195,17 +187,17 @@ The inspector collects read-only evidence using system interfaces and package me
 - systemd states for SDDM, NetworkManager, SSH service, and SSH socket;
 - absence of live-only files, package, sudo policy, and autologin configuration.
 
-The host-side assertion validates the exact values in section 5.1 and writes the parsed JSON into the scenario artifact directory.
+The host-side assertion validates exact expected values and writes the parsed JSON into the scenario artifact directory.
 
 The inspector performs no repair and changes no guest state.
+
+The installed Zen boot is the default GRUB path. To select installed LTS without menu timing, a separate helper runs only under an explicit test fw_cfg marker after Zen evidence has been emitted. It parses `/boot/grub/grub.cfg`, identifies the LTS menuentry and enclosing submenu by their internal `--id` values and kernel command, calls `grub-reboot` with that ID selector, verifies `next_entry` through `grub-editenv`, emits structured preparation evidence, and powers off. The following boot must reach LTS through GRUB and consume the one-shot state. Display titles, translated strings, numeric indexes, and QMP navigation are forbidden.
 
 ### 5.4 Installer success and controlled failure
 
 Normal installation remains driven through stable AT-SPI object names. Coordinate clicking remains forbidden.
 
-A separate explicit fw_cfg test marker enables failure injection. In that mode the live-only test harness selects a test-only Calamares configuration overlay containing a deterministic failing execution step after logs and target context exist but before success can be reported.
-
-The overlay is inert without the marker, is excluded from the installed target, does not replace the normal Calamares configuration, and is covered by static tests proving that the ordinary installation path cannot enable it accidentally.
+A separate explicit fw_cfg test marker enables failure injection. In that mode the harness uses a test-only Calamares configuration overlay containing a deterministic failing execution step after logs and target context exist but before success can be reported.
 
 The failure scenario passes only when all of these are true:
 
@@ -225,7 +217,7 @@ Unexpected success is a gate failure.
 1. live UEFI Zen;
 2. live UEFI LTS;
 3. install to a fresh 64 GiB QCOW2 disk;
-4. installed UEFI/GRUB Zen;
+4. installed UEFI/GRUB Zen and verified LTS one-shot preparation;
 5. installed UEFI/GRUB LTS;
 6. controlled installer failure;
 7. BIOS best-effort smoke when enabled.
@@ -237,11 +229,10 @@ The workflow uploads:
 - serial logs;
 - QEMU stderr and QMP diagnostics;
 - parsed live and installed JSON evidence;
-- logind and process diagnostics for the live session;
 - installer and accessibility-harness logs;
 - Btrfs and mount reports;
+- GRUB one-shot preparation evidence;
 - failure-injection evidence;
-- executor package/tool versions;
 - final gate summary JSON.
 
 BIOS remains pass/fail/not-run and cannot change the required UEFI result.
@@ -268,6 +259,7 @@ No checkbox is marked complete solely because code or configuration exists.
 - QEMU termination preserves artifacts before cleanup.
 - OVMF vars are unique per scenario and never shared across concurrent boots.
 - A malformed or unverifiable EFI one-shot selection stops before QEMU boot.
+- GRUB one-shot preparation is explicit, verified, one-use, and never changes the persistent default.
 - Installer automation emits `start`, stage transitions, `success`, `failure`, or `blocked`; ambiguous termination is failure.
 - Cleanup removes only scenario-owned temporary files and never deletes a mounted work tree.
 
@@ -278,11 +270,11 @@ Implementation follows tests first or alongside each change.
 Static tests will require:
 
 - schema 2 fields and strict live/installed assertions;
-- rejection of missing graphical, SDDM, active Wayland session, Plasma process, NetworkManager, GRUB, kernel, Btrfs, metadata, or policy evidence;
-- no timed `sleep 2` plus `down`/`ret` LTS selection path;
-- verified one-shot entry IDs and read-back;
+- rejection of missing graphical, SDDM, active Plasma session, NetworkManager, GRUB, kernel, Btrfs, metadata, or policy evidence;
+- no timed `sleep 2` plus `down`/`ret` kernel-selection path;
+- verified systemd-boot one-shot entry IDs;
+- verified GRUB one-shot LTS entry IDs and `grubenv` readback;
 - exact installed Btrfs subvolume and mount expectations;
-- failure-injection isolation from the ordinary installer path;
 - retained controlled-failure evidence and no false success marker;
 - independent workflow scenarios plus final outcome summary;
 - pinned third-party actions and read-only permissions;
@@ -305,6 +297,9 @@ Virtual validation requires a newly built trusted artifact containing the guest-
 Likely modified files:
 
 - `packages/felunyx-identity/felunyx-evidence`;
+- `packages/felunyx-identity/felunyx-evidence.service`;
+- `packages/felunyx-identity/PKGBUILD`;
+- `packages/felunyx-iso-hooks/drive-installation.py`;
 - `tests/boot/expect_serial.py`;
 - `tools/felunyx-run-vm`;
 - `.github/workflows/virtual-smoke.yml`;
@@ -316,20 +311,24 @@ Likely new focused files:
 
 - `tests/boot/set_loader_oneshot.py`;
 - `tests/boot/assert_installed_system.py`;
+- `tests/boot/assert_grub_oneshot.py`;
+- `tests/boot/write_scenario_result.py`;
+- `packages/felunyx-identity/felunyx-installed-evidence`;
+- `packages/felunyx-identity/felunyx-prepare-grub-oneshot`;
 - installer failure-injection configuration owned by `felunyx-iso-hooks`;
-- unit-test fixtures for valid and invalid schema 2 evidence.
+- unit-test fixtures for valid and invalid evidence.
 
-The implementation plan may reduce this list when an existing file cleanly owns the responsibility. Unrelated refactoring is out of scope.
+The implementation plan may reduce this list only when an existing file cleanly owns the responsibility. Unrelated refactoring is out of scope.
 
 ## 9. Completion and review boundary
 
 This hardening work is complete only when:
 
 - source tests and lint pass;
-- the implementation is reviewed on an isolated draft PR targeting `agent/phase-2-implementation`;
+- the implementation is reviewed on isolated draft PR #5 targeting `agent/phase-2-implementation`;
 - no false V claim is introduced;
 - rollback is a clean revert of the focused hardening commits;
-- a new ISO build is identified as required when guest payload changes;
+- a new ISO build is identified as required because guest payload changes;
 - the user reviews the changes before they are integrated into PR #3.
 
 Even after source completion, the Virtual gate remains pending until the hardened workflow runs against the matching rebuilt ISO and its evidence is reviewed. Phase 3 remains blocked.
