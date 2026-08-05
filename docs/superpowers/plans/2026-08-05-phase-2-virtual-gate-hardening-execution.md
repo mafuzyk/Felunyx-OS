@@ -65,3 +65,48 @@ The package installs the enablement symlink in `graphical.target.wants`. A servi
 - **H — Hardware:** not tested.
 
 The development ISO from run `30951476281` predates these guest-side changes and cannot inherit their validation.
+
+## Task 2 — Select live kernels through verified OVMF variables
+
+**Status:** implemented and validated remotely on 2026-08-05.
+
+Implemented:
+
+- exact allowlist for `felunyx-linux-zen.conf` and `felunyx-linux-lts.conf`;
+- offline `LoaderEntryOneShot` modification in a scenario-owned OVMF varstore;
+- exact GUID, attributes, UTF-16LE value, and readback validation;
+- atomic varstore replacement only after verified readback;
+- atomic tool/version/entry report;
+- removal of timed QMP `down`/`ret` navigation;
+- `python3-virt-firmware` installation and version capture in the Virtual executor;
+- explicit fail-closed blocking of installed boots until Tasks 3 and 4 provide installed evidence and semantic GRUB selection.
+
+### Narrow execution correction
+
+Task 2 Step 3 described the JSON `data` field as Base64. The pinned `virt-fw-vars` contract uses a hexadecimal byte string. The implementation therefore serializes the NUL-terminated UTF-16LE entry identifier with `.hex()` and rejects malformed, wrong-GUID, wrong-attribute, missing, duplicate, or mismatched readback.
+
+Input shape:
+
+```json
+{
+  "variables": [
+    {
+      "name": "LoaderEntryOneShot",
+      "guid": "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f",
+      "attr": 7,
+      "data": "<hexadecimal UTF-16LE bytes>"
+    }
+  ]
+}
+```
+
+### TDD evidence
+
+- RED run #84 (`31003084640`): 6 new failures, 71 prior tests passed; helper, semantic integration, and executor dependency were absent.
+- GREEN run #88 (`31003319097`): 77 tests passed in 2.10 seconds.
+
+### Validation level
+
+- **R — Remote:** Task 2 helper, input/readback contract, harness policy, workflow dependency, and static tests passed.
+- **V — Virtual:** pending execution against a matching rebuilt ISO and OVMF varstore on the Virtual runner.
+- **H — Hardware:** not tested.
