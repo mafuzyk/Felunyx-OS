@@ -110,3 +110,39 @@ Input shape:
 - **R — Remote:** Task 2 helper, input/readback contract, harness policy, workflow dependency, and static tests passed.
 - **V — Virtual:** pending execution against a matching rebuilt ISO and OVMF varstore on the Virtual runner.
 - **H — Hardware:** not tested.
+
+## Task 3 — Inspect installed GRUB, kernels, Btrfs, and live-policy absence
+
+**Status:** implemented and validated remotely on 2026-08-05.
+
+Implemented:
+
+- an opt-in installed-system collector that exits silently on live media;
+- read-only package checks for GRUB, Linux Zen, Linux LTS, and absence of `felunyx-iso-hooks`;
+- non-empty GRUB configuration and both installed kernel image observations;
+- exact runtime mounts for `@`, `@home`, `@snapshots`, `@cache`, and `@log`;
+- Btrfs subvolume inventory and persistent `/etc/fstab` evidence;
+- `compress=zstd:1` and EFI mask validation, accepting `umask=0077` or equivalent `fmask` plus `dmask`;
+- build metadata and UEFI observations;
+- absence of the live marker, live sudo policy, and live SDDM autologin;
+- separate SSH service and socket observations;
+- duplicate, malformed, partial, wrong-kernel, wrong-filesystem, wrong-subvolume, missing-package, and policy-residue rejection;
+- installed Zen boot integration through the strict host assertion;
+- continued fail-closed blocking of installed LTS until Task 4 provides semantic GRUB one-shot selection.
+
+### Narrow execution correction
+
+The installed-evidence tests were placed in `tests/test_installed_evidence.py` instead of further expanding `tests/test_virtual_harness.py`. This keeps the live/OVMF and installed-storage contracts independently reviewable while preserving the same repository-wide pytest gate.
+
+The inspector performs only read operations. It does not install packages, regenerate GRUB, create subvolumes, remount filesystems, enable services, or repair the target.
+
+### TDD evidence
+
+- RED run #92 (`31003732051`): 18 new failures, 77 prior tests passed; installed assertion, collector, packaging, and harness integration were absent.
+- GREEN run #97 (`31004021318`): 95 tests passed in 2.78 seconds.
+
+### Validation level
+
+- **R — Remote:** Task 3 schema, rejection policy, read-only source contract, package/service integration, and static tests passed.
+- **V — Virtual:** pending installed runtime evidence from a matching rebuilt ISO and disk.
+- **H — Hardware:** not tested.
