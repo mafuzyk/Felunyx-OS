@@ -26,10 +26,20 @@ jobs:
           run-id: ${{ inputs.artifact_run_id }}
           github-token: ${{ github.token }}
           path: artifacts
-      - name: Install QEMU and OVMF
+      - name: Install QEMU, OVMF, and variable tooling
         run: |
+          set -Eeuo pipefail
           sudo apt-get update
-          sudo apt-get install --yes qemu-system-x86 qemu-utils ovmf python3
+          sudo apt-get install --yes \
+            qemu-system-x86 \
+            qemu-utils \
+            ovmf \
+            python3 \
+            python3-virt-firmware
+          mkdir -p virtual
+          dpkg-query -W -f='${Version}\n' python3-virt-firmware \
+            | sed 's/^/python3-virt-firmware=/' \
+            > virtual/executor-packages.txt
       - name: Boot Zen and LTS live environments
         run: |
           set -Eeuo pipefail
@@ -49,6 +59,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: felunyx-phase2-virtual-${{ github.run_id }}
-          path: virtual/**/*.log
+          path: |
+            virtual/**/*.log
+            virtual/**/loader-entry-oneshot.json
+            virtual/executor-packages.txt
           if-no-files-found: warn
           retention-days: 14
