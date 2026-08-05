@@ -1,0 +1,174 @@
+{
+  "build_info": {
+    "architecture": "x86_64",
+    "channel": "development",
+    "phase": 2,
+    "schema": 1,
+    "source_commit": "test-source-commit"
+  },
+  "build_metadata": true,
+  "files": {
+    "grub_cfg": {
+      "exists": true,
+      "size": 4096
+    },
+    "linux_lts_kernel": {
+      "exists": true,
+      "size": 12000000
+    },
+    "linux_zen_kernel": {
+      "exists": true,
+      "size": 13000000
+    },
+    "live_autologin": false,
+    "live_marker": false,
+    "live_sudo": false
+  },
+  "fstab": [
+    {
+      "fstype": "btrfs",
+      "options": [
+        "compress=zstd:1",
+        "defaults",
+        "subvol=@broken"
+      ],
+      "source": "UUID=felunyx-root",
+      "target": "/"
+    },
+    {
+      "fstype": "btrfs",
+      "options": [
+        "compress=zstd:1",
+        "defaults",
+        "subvol=@home"
+      ],
+      "source": "UUID=felunyx-root",
+      "target": "/home"
+    },
+    {
+      "fstype": "btrfs",
+      "options": [
+        "compress=zstd:1",
+        "defaults",
+        "subvol=@snapshots"
+      ],
+      "source": "UUID=felunyx-root",
+      "target": "/.snapshots"
+    },
+    {
+      "fstype": "btrfs",
+      "options": [
+        "compress=zstd:1",
+        "defaults",
+        "subvol=@cache"
+      ],
+      "source": "UUID=felunyx-root",
+      "target": "/var/cache"
+    },
+    {
+      "fstype": "btrfs",
+      "options": [
+        "compress=zstd:1",
+        "defaults",
+        "subvol=@log"
+      ],
+      "source": "UUID=felunyx-root",
+      "target": "/var/log"
+    },
+    {
+      "fstype": "vfat",
+      "options": [
+        "defaults",
+        "umask=0077"
+      ],
+      "source": "UUID=FELUNYX-EFI",
+      "target": "/boot/efi"
+    }
+  ],
+  "id": "felunyx",
+  "kernel": "6.12.0-zen1-1-zen",
+  "kernel_variant": "zen",
+  "live": false,
+  "mounts": {
+    "/": {
+      "fstype": "btrfs",
+      "options": [
+        "compress=zstd:1",
+        "rw",
+        "subvol=/@broken"
+      ],
+      "source": "/dev/vda2[/@broken]",
+      "subvolume": "/@broken"
+    },
+    "/.snapshots": {
+      "fstype": "btrfs",
+      "options": [
+        "compress=zstd:1",
+        "rw",
+        "subvol=/@snapshots"
+      ],
+      "source": "/dev/vda2[/@snapshots]",
+      "subvolume": "/@snapshots"
+    },
+    "/boot/efi": {
+      "fstype": "vfat",
+      "options": [
+        "rw",
+        "umask=0077"
+      ],
+      "source": "/dev/vda1",
+      "subvolume": null
+    },
+    "/home": {
+      "fstype": "btrfs",
+      "options": [
+        "compress=zstd:1",
+        "rw",
+        "subvol=/@home"
+      ],
+      "source": "/dev/vda2[/@home]",
+      "subvolume": "/@home"
+    },
+    "/var/cache": {
+      "fstype": "btrfs",
+      "options": [
+        "compress=zstd:1",
+        "rw",
+        "subvol=/@cache"
+      ],
+      "source": "/dev/vda2[/@cache]",
+      "subvolume": "/@cache"
+    },
+    "/var/log": {
+      "fstype": "btrfs",
+      "options": [
+        "compress=zstd:1",
+        "rw",
+        "subvol=/@log"
+      ],
+      "source": "/dev/vda2[/@log]",
+      "subvolume": "/@log"
+    }
+  },
+  "packages": {
+    "felunyx-iso-hooks": false,
+    "grub": true,
+    "linux-lts": true,
+    "linux-zen": true
+  },
+  "schema": 1,
+  "services": {
+    "networkmanager_active": true,
+    "sddm_active": true,
+    "sshd_service_active": false,
+    "sshd_socket_active": false
+  },
+  "subvolumes": [
+    "/@broken",
+    "/@cache",
+    "/@home",
+    "/@log",
+    "/@snapshots"
+  ],
+  "uefi": true
+}
