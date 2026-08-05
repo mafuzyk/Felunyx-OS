@@ -108,6 +108,42 @@ tools/felunyx-run-vm boot-bios \
 
 BIOS is recorded as pass, fail, blocked, or not-run. It cannot weaken or replace the required UEFI result.
 
+## Explicit branch-local workflow trigger
+
+GitHub manual `workflow_dispatch` requires the workflow file to exist on the default branch. During Phase 2 review, `virtual-smoke.yml` still belongs to the isolated implementation branches, so the workflow also supports a narrow branch-local `push` trigger.
+
+That trigger watches only:
+
+```text
+docs/evidence/phase-2-virtual-trigger.json
+```
+
+The file is intentionally absent during ordinary development. Creating or changing it is an explicit request to run the Virtual gate and must happen only after Mafu approves the smoke and a matching trusted build exists.
+
+The request format is:
+
+```json
+{
+  "schema": 1,
+  "artifact_run_id": 123456789,
+  "expected_source_commit": "0123456789abcdef0123456789abcdef01234567"
+}
+```
+
+Before creating it:
+
+1. identify the successful trusted build run;
+2. inspect its `build-info.json` and copy the exact 40-character `source_commit`;
+3. confirm that the artifact contains exactly one ISO and belongs to the intended Phase 2 source;
+4. obtain Mafu's explicit authorization to run the Virtual smoke;
+5. commit only the reviewed request on `fix/phase-2-virtual-gate-hardening`.
+
+The workflow downloads the named artifact, reads its own Phase 2 build metadata, and fails before QEMU when the observed source commit differs from `expected_source_commit`. The harness itself is checked out from the artifact source commit, while the current branch supplies only the controller and fail-closed aggregator.
+
+Do not create the request merely to test the trigger. Keep it until the branch-local trigger is removed or integrated; deleting the watched file is itself a matching push event and would create a noisy failed run.
+
+After the workflow is available on the default branch, normal `workflow_dispatch` with an explicit artifact run ID becomes the preferred entry point.
+
 ## Claims and limits
 
 Passing repository tests establishes Remote evidence for source contracts only. A Virtual claim additionally requires:
