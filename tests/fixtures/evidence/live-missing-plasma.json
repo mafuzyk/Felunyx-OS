@@ -1,0 +1,16 @@
+{
+  "build_metadata": true,
+  "graphical_target": true,
+  "id": "felunyx",
+  "kernel": "6.16.0-zen1-1-zen",
+  "kernel_variant": "zen",
+  "live": true,
+  "networkmanager": true,
+  "plasma_wayland_available": true,
+  "schema": 2,
+  "sddm": true,
+  "sessions": [],
+  "sshd_service_active": false,
+  "sshd_socket_active": false,
+  "uefi": true
+}

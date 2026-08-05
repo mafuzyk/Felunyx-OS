@@ -6,49 +6,274 @@ on:
       artifact_run_id:
         description: Successful Build Phase 2 ISO workflow run ID
         required: true
+  push:
+    branches: [ fix/phase-2-virtual-gate-hardening ]
+    paths: [ docs/evidence/phase-2-virtual-trigger.json ]
 
 permissions:
   actions: read
   contents: read
 
+concurrency:
+  group: virtual-${{ github.workflow }}-${{ github.ref }}-${{ inputs.artifact_run_id || github.sha }}
+  cancel-in-progress: false
+
 jobs:
   smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 240
+    env:
+      SUCCESS_DISK: ${{ runner.temp }}/felunyx-success.qcow2
+      FAILURE_DISK: ${{ runner.temp }}/felunyx-failure.qcow2
     steps:
-      - name: Check out source
+      - name: Check out workflow controller
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+          path: controller
+
+      - name: Resolve explicit virtual request
+        id: virtual_request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_ARTIFACT_RUN_ID: ${{ inputs.artifact_run_id }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          event_name = os.environ["EVENT_NAME"]
+          expected_source_commit = ""
+          if event_name == "workflow_dispatch":
+              raw_run_id = os.environ.get("MANUAL_ARTIFACT_RUN_ID", "")
+          elif event_name == "push":
+              marker = Path(
+                  "controller/docs/evidence/phase-2-virtual-trigger.json"
+              )
+              try:
+                  request = json.loads(marker.read_text(encoding="utf-8"))
+              except (OSError, json.JSONDecodeError) as exc:
+                  raise SystemExit(f"invalid virtual trigger marker: {exc}")
+              if not isinstance(request, dict) or request.get("schema") != 1:
+                  raise SystemExit("virtual trigger marker schema must be 1")
+              raw_run_id = request.get("artifact_run_id")
+              expected_source_commit = request.get(
+                  "expected_source_commit", ""
+              )
+              if not isinstance(expected_source_commit, str) or not re.fullmatch(
+                  r"[0-9a-f]{40}", expected_source_commit
+              ):
+                  raise SystemExit(
+                      "virtual trigger expected_source_commit must be a 40-character SHA"
+                  )
+          else:
+              raise SystemExit(f"unsupported workflow event: {event_name}")
+
+          try:
+              artifact_run_id = int(raw_run_id)
+          except (TypeError, ValueError) as exc:
+              raise SystemExit("artifact_run_id must be a positive integer") from exc
+          if artifact_run_id <= 0:
+              raise SystemExit("artifact_run_id must be a positive integer")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"artifact_run_id={artifact_run_id}\n")
+              handle.write(
+                  f"expected_source_commit={expected_source_commit}\n"
+              )
+          print(f"requested artifact run: {artifact_run_id}")
+          if expected_source_commit:
+              print(f"requested artifact source: {expected_source_commit}")
+          PY
+
       - name: Download trusted ISO artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          run-id: ${{ inputs.artifact_run_id }}
+          run-id: ${{ steps.virtual_request.outputs.artifact_run_id }}
           github-token: ${{ github.token }}
           path: artifacts
-      - name: Install QEMU and OVMF
+
+      - name: Resolve artifact source and ISO
+        id: artifact_source
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ steps.virtual_request.outputs.expected_source_commit }}
         run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          artifact_root = Path("artifacts").resolve()
+          iso_files = sorted(artifact_root.rglob("*.iso"))
+          if len(iso_files) != 1:
+              raise SystemExit(
+                  f"expected exactly one ISO artifact, found {len(iso_files)}"
+              )
+
+          candidates = []
+          for path in sorted(artifact_root.rglob("build-info.json")):
+              try:
+                  data = json.loads(path.read_text(encoding="utf-8"))
+              except (OSError, json.JSONDecodeError):
+                  continue
+              if not isinstance(data, dict) or data.get("phase") != 2:
+                  continue
+              commit = data.get("source_commit")
+              if isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}", commit):
+                  candidates.append((path, commit))
+
+          commits = sorted({commit for _, commit in candidates})
+          if len(commits) != 1:
+              locations = ", ".join(str(path) for path, _ in candidates)
+              raise SystemExit(
+                  "expected one unique Phase 2 source_commit, "
+                  f"found {commits!r}; candidates: {locations}"
+              )
+
+          source_commit = commits[0]
+          expected = os.environ.get("EXPECTED_SOURCE_COMMIT", "")
+          if expected and source_commit != expected:
+              raise SystemExit(
+                  "requested source commit does not match artifact: "
+                  f"requested {expected}, observed {source_commit}"
+              )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"source_commit={source_commit}\n")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as handle:
+              handle.write(f"ISO_PATH={iso_files[0]}\n")
+          print(f"artifact source: {source_commit}")
+          print(f"artifact ISO: {iso_files[0]}")
+          PY
+
+      - name: Check out matching artifact source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ steps.artifact_source.outputs.source_commit }}
+          persist-credentials: false
+          path: source
+
+      - name: Install QEMU, OVMF, and variable tooling
+        run: |
+          set -Eeuo pipefail
           sudo apt-get update
-          sudo apt-get install --yes qemu-system-x86 qemu-utils ovmf python3
-      - name: Boot Zen and LTS live environments
+          sudo apt-get install --yes \
+            qemu-system-x86 \
+            qemu-utils \
+            ovmf \
+            python3 \
+            python3-virt-firmware
+          mkdir -p virtual
+          dpkg-query -W -f='${Version}\n' python3-virt-firmware \
+            | sed 's/^/python3-virt-firmware=/' \
+            > virtual/executor-packages.txt
+
+      - name: Boot live Linux Zen
+        id: live_zen
+        if: always()
+        continue-on-error: true
         run: |
           set -Eeuo pipefail
-          iso=$(find artifacts -type f -name '*.iso' -print -quit)
-          test -n "$iso"
-          tools/felunyx-run-vm boot-live --iso "$iso" --kernel zen --artifacts virtual/zen --timeout 900
-          tools/felunyx-run-vm boot-live --iso "$iso" --kernel lts --artifacts virtual/lts --timeout 900
-      - name: Install and boot the target system
+          source/tools/felunyx-run-vm boot-live \
+            --iso "$ISO_PATH" \
+            --kernel zen \
+            --artifacts virtual/live_zen \
+            --timeout 900
+
+      - name: Boot live Linux LTS
+        id: live_lts
+        if: always()
+        continue-on-error: true
         run: |
           set -Eeuo pipefail
-          iso=$(find artifacts -type f -name '*.iso' -print -quit)
-          tools/felunyx-run-vm install --iso "$iso" --disk virtual/felunyx.qcow2 --artifacts virtual/install --timeout 2400
-          tools/felunyx-run-vm boot-installed --disk virtual/felunyx.qcow2 --kernel zen --artifacts virtual/installed-zen --timeout 900
-          tools/felunyx-run-vm boot-installed --disk virtual/felunyx.qcow2 --kernel lts --artifacts virtual/installed-lts --timeout 900
+          source/tools/felunyx-run-vm boot-live \
+            --iso "$ISO_PATH" \
+            --kernel lts \
+            --artifacts virtual/live_lts \
+            --timeout 900
+
+      - name: Install Felunyx successfully
+        id: install
+        if: always()
+        continue-on-error: true
+        run: |
+          set -Eeuo pipefail
+          rm -f "${{ env.SUCCESS_DISK }}"
+          source/tools/felunyx-run-vm install \
+            --iso "$ISO_PATH" \
+            --disk "${{ env.SUCCESS_DISK }}" \
+            --mode success \
+            --artifacts virtual/install \
+            --timeout 2400
+
+      - name: Boot installed Linux Zen and prepare LTS
+        id: installed_zen
+        if: always()
+        continue-on-error: true
+        run: |
+          set -Eeuo pipefail
+          source/tools/felunyx-run-vm boot-installed \
+            --disk "${{ env.SUCCESS_DISK }}" \
+            --kernel zen \
+            --prepare-next lts \
+            --artifacts virtual/installed_zen \
+            --timeout 900
+
+      - name: Boot installed Linux LTS
+        id: installed_lts
+        if: always()
+        continue-on-error: true
+        run: |
+          set -Eeuo pipefail
+          source/tools/felunyx-run-vm boot-installed \
+            --disk "${{ env.SUCCESS_DISK }}" \
+            --kernel lts \
+            --artifacts virtual/installed_lts \
+            --timeout 900
+
+      - name: Exercise controlled installer failure
+        id: failure_injection
+        if: always()
+        continue-on-error: true
+        run: |
+          set -Eeuo pipefail
+          rm -f "${{ env.FAILURE_DISK }}"
+          source/tools/felunyx-run-vm install \
+            --iso "$ISO_PATH" \
+            --disk "${{ env.FAILURE_DISK }}" \
+            --mode failure \
+            --artifacts virtual/failure_injection \
+            --timeout 2400
+
+      - name: Boot BIOS best-effort scenario
+        id: bios
+        if: always()
+        continue-on-error: true
+        run: |
+          set -Eeuo pipefail
+          source/tools/felunyx-run-vm boot-bios \
+            --iso "$ISO_PATH" \
+            --artifacts virtual/bios \
+            --timeout 900
+
+      - name: Summarize virtual gate
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          python3 controller/tests/boot/summarize_virtual_gate.py \
+            --root virtual \
+            --output virtual/gate-summary.json
+
       - name: Upload virtual evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: felunyx-phase2-virtual-${{ github.run_id }}
-          path: virtual/**/*.log
+          path: virtual/
           if-no-files-found: warn
           retention-days: 14

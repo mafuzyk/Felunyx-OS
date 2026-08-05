@@ -1,73 +1,119 @@
 # Phase 2 Status — Reproducible ISO Skeleton
 
-## Current state
+**Last reviewed:** 2026-08-05
 
-**Design approved on 2026-08-04; implementation plan written.**
-
-The approved design and executable plan are complete. No ISO implementation is included in this specification branch; implementation begins on a separate isolated branch after this pull request is merged.
+**Current conclusion:** the Phase 2 implementation exists, but the phase is not approved or merged. Source-level virtual-gate hardening has been validated remotely; the complete Remote and Virtual gates remain pending evidence and review.
 
 ## Goal
 
-Produce a minimal, repeatable, virtually bootable and installable Felunyx skeleton with Linux Zen, Linux LTS fallback, a minimal Plasma Wayland live session, Calamares, Btrfs, and installed GRUB.
+Produce a minimal, repeatable, virtually bootable and installable Felunyx OS skeleton with Linux Zen as the default, Linux LTS as an explicit fallback, a minimal Plasma Wayland live session, Calamares, Btrfs, and installed GRUB.
 
-## Design evidence
+## Validation vocabulary
 
-| Deliverable | Status | Evidence |
+This document uses only the following validation-state terms:
+
+- `implemented`: code or configuration exists, without implying runtime proof;
+- `validated remotely`: source, schemas, tests, builds, manifests, or CI were checked remotely;
+- `validated in VM`: the matching artifact executed successfully in a reviewed virtual-machine scenario;
+- `validated in hardware`: the matching artifact executed successfully on reviewed physical hardware;
+- `pending`: required work or evidence is incomplete;
+- `not tested`: no evidence exists at that level.
+
+A component marked `validated remotely` does not make the complete Remote gate pass. A Remote result does not imply `validated in VM`, and a VM result does not imply `validated in hardware`.
+
+## Current state
+
+| Scope | State | Evidence and limitation |
 |---|---|---|
-| Phase 2 specification | Approved | `docs/superpowers/specs/2026-08-04-phase-2-reproducible-iso-design.md` |
-| Source ledger | Complete | `docs/research/phase-2-source-ledger.md` |
-| ISO structure approach | Approved | Simple `archiso` profile with prepared boundaries |
-| Firmware approach | Approved | UEFI required, BIOS best-effort |
-| Build environment approach | Approved | Canonical environment, replaceable executor |
-| Error-prevention policy | Approved | Primary-source review plus explicit pending V/H tests |
-| User review of written specification | Approved — 2026-08-04 | Conversation approval |
-| Implementation plan | Complete | `docs/superpowers/plans/2026-08-04-phase-2-reproducible-iso.md` |
-| Implementation | Ready to start | Separate implementation branch |
+| Approved Phase 2 design and plan | implemented | `docs/superpowers/specs/2026-08-04-phase-2-reproducible-iso-design.md` and `docs/superpowers/plans/2026-08-04-phase-2-reproducible-iso.md` |
+| Phase 2 ISO skeleton | implemented | PR #3, branch `agent/phase-2-implementation`, fixed review head `1f89d17b10c8e0b4965a7f8ebc5e4d509e5f637a`; the PR is draft and unmerged |
+| Virtual-gate hardening Tasks 1–7 | validated remotely | PR #5, branch `fix/phase-2-virtual-gate-hardening`; validation run `31007003860` reported 132 tests passed |
+| Remote gate | pending | One trusted development build exists, but the complete lock, provenance, checksum, manifest, two-build comparison evidence, and R1/R2/R3 review have not all been closed |
+| Virtual gate | pending | Requires a matching rebuilt ISO, all required hardened scenarios, uploaded evidence, and human review of the results |
+| Hardware gate | not tested | Physical USB, firmware, GPU, network, storage, power, peripherals, and multi-monitor checks remain in the H queue |
+| Phase 3 implementation | pending | Phase 3 implementation remains blocked until the Phase 2 review boundary is explicitly approved |
 
-## Proposed completion gates
+## Branches and pull requests
 
-### Remote gate (R)
+### PR #3 — Phase 2 ISO skeleton
 
-- [ ] exact environment and source locks committed;
-- [ ] `releng` baseline and delta report validated;
-- [ ] integration and frozen build modes implemented;
-- [ ] package resolution and content checks pass;
-- [ ] work-directory cleanup safety tests pass;
-- [ ] two frozen builds have equivalent manifests and functional payload;
-- [ ] provenance, checksums, logs, and comparison reports produced;
-- [ ] no secrets or production signing keys present;
-- [ ] privileged workflows restricted to trusted inputs.
+PR #3 contains the Phase 2 implementation on `agent/phase-2-implementation`. Its review baseline is commit `1f89d17b10c8e0b4965a7f8ebc5e4d509e5f637a`. It remains draft and unmerged; no merge or phase approval is implied by a successful build.
 
-### Virtual gate (V)
+### PR #5 — Virtual-gate hardening
 
-- [ ] UEFI QEMU/OVMF boot reaches the declared live target;
-- [ ] Plasma Wayland live session evidence collected;
-- [ ] Zen boots as default;
-- [ ] LTS boots when selected;
-- [ ] Calamares installs to a disposable GPT/Btrfs disk;
-- [ ] installed GRUB boots Zen;
-- [ ] installed GRUB boots LTS;
-- [ ] Btrfs subvolume and mount layout verified;
-- [ ] controlled installer failure retains actionable logs;
-- [ ] BIOS smoke result recorded when the inherited path remains enabled.
+PR #5 is isolated on `fix/phase-2-virtual-gate-hardening` and targets the PR #3 branch rather than `main`. Tasks 1–7 strengthened live evidence, semantic Zen/LTS selection, installed-system inspection, GRUB one-shot selection, controlled installer failure, QEMU scenario records, and fail-closed workflow aggregation.
 
-### Hardware queue (H)
+The source contracts reached `validated remotely` in validation run `31007003860`, where 132 tests passed. Those results validate source behavior and workflow policy only. They do not establish the complete Remote gate and do not count as `validated in VM`.
 
-Not required to close Phase 2:
+### PR #6 — Work Environments preparation
 
-- [ ] physical UEFI USB boot;
-- [ ] real graphics and network devices;
-- [ ] physical storage installation;
-- [ ] firmware variance;
-- [ ] suspend/resume and peripherals.
+PR #6 is preparatory design only for a possible later phase. It is based on `main`, is not consumed by PR #5, and does not authorize Phase 3 implementation. Shared documentation such as `docs/README.md` must be reconciled explicitly after the Phase 2 boundary rather than overwritten from this branch.
 
-## Review conclusion
+## Existing development artifact
 
-The user approved the Phase 2 written design on 2026-08-04. The implementation plan was produced with exact task boundaries, file ownership, test commands, commit boundaries, Remote/Virtual evidence requirements, and explicit Hardware deferrals.
+Trusted build workflow run `30951476281` produced the artifact:
 
-## Implementation transition
+- name: `felunyx-phase2-30951476281`;
+- digest: `sha256:cf130079fdf93b1fd6a7deb2581135882fe9fdb2fcbf1bb2c77881087733cd10`;
+- classification: internal development artifact;
+- release status: not a release.
 
-1. merge the approved specification and plan;
-2. create `agent/phase-2-implementation` from the new `main`;
-3. execute the implementation plan task-by-task;
-4. stop at the Phase 2 review boundary with R/V evidence and the H queue.
+This artifact proves that one development build completed and was uploaded. It predates the guest-side hardening in PR #5, so it cannot inherit the new live, installed, GRUB, Calamares-failure, or workflow validation. It must not be used to claim that the hardened Virtual gate passed.
+
+## Remote gate
+
+**State: pending.**
+
+Source tests and one development build are useful evidence, but the complete gate still requires reviewed proof for:
+
+- exact build-environment and source locks;
+- resolved `releng` delta and package contents;
+- integration and frozen build behavior;
+- safe cleanup and preserved failure evidence;
+- checksums, manifests, source locks, logs, and provenance;
+- two independent frozen builds and comparison evidence;
+- R1 and R2 results, with an explicit R3 result or structured differences;
+- absence of secrets, enabled SSH, production signing material, and unsafe workflow inputs.
+
+No full Remote-gate pass is recorded here.
+
+## Virtual gate
+
+**State: pending.**
+
+The hardened workflow must run against a matching rebuilt ISO and produce reviewed results for all required scenarios:
+
+1. live UEFI Linux Zen;
+2. live UEFI Linux LTS;
+3. successful Calamares installation to a fresh GPT/Btrfs disk;
+4. installed UEFI/GRUB Linux Zen plus verified one-shot LTS preparation;
+5. installed UEFI/GRUB Linux LTS on the same disk;
+6. controlled `FelunyxInjectedFailure` with actionable transported logs.
+
+BIOS remains best-effort and is recorded separately. Missing, malformed, skipped, cancelled, blocked, or unrecorded required evidence is never a pass.
+
+No scenario is currently recorded as `validated in VM` for the hardened source.
+
+## Hardware queue
+
+**State: not tested.**
+
+Hardware validation remains explicitly separate:
+
+- physical UEFI USB boot;
+- firmware variation;
+- real GPU and display behavior;
+- wired and wireless network devices;
+- physical storage installation and recovery;
+- suspend, resume, power management, and battery behavior;
+- peripherals and multi-monitor behavior.
+
+No item is currently recorded as `validated in hardware`.
+
+## Review boundary
+
+- Keep PR #3 and PR #5 draft and unmerged.
+- Complete the remaining Remote evidence and review it explicitly.
+- Build a matching ISO from the hardening source before running the hardened Virtual workflow.
+- Review every required scenario artifact before changing the Virtual gate state.
+- Do not begin Phase 3 implementation from PR #6 or another branch until Mafu explicitly approves the Phase 2 review boundary.

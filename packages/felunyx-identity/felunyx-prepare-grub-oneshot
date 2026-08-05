@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+"""Prepare one verified GRUB boot into the installed Linux LTS fallback."""
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+LIVE_MARKER = Path("/run/felunyx/live")
+EVIDENCE_MARKER = Path(
+    "/sys/firmware/qemu_fw_cfg/by_name/opt/felunyx/evidence/raw"
+)
+REQUEST_MARKER = Path(
+    "/sys/firmware/qemu_fw_cfg/by_name/opt/felunyx/grub-next/raw"
+)
+GRUB_CONFIG = Path("/boot/grub/grub.cfg")
+GRUB_ENV = Path("/boot/grub/grubenv")
+OUTPUT = Path("/run/felunyx/grub-next.json")
+PREFIX = "FELUNYX_GRUB_NEXT="
+ID_PATTERN = r"[A-Za-z_][A-Za-z0-9_-]*"
+
+
+class PreparationError(RuntimeError):
+    """Fail-closed one-shot preparation error."""
+
+
+def marker_value(path: Path) -> str:
+    try:
+        return path.read_bytes().rstrip(b"\0\n").decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def evidence_enabled() -> bool:
+    try:
+        command_line = Path("/proc/cmdline").read_text(
+            encoding="utf-8", errors="ignore"
+        )
+    except OSError:
+        command_line = ""
+    return "felunyx.evidence=1" in command_line or marker_value(
+        EVIDENCE_MARKER
+    ) == "1"
+
+
+def find_open_brace(text: str, start: int) -> int:
+    quote: str | None = None
+    escaped = False
+    for index in range(start, len(text)):
+        character = text[index]
+        if escaped:
+            escaped = False
+            continue
+        if character == "\\":
+            escaped = True
+            continue
+        if quote:
+            if character == quote:
+                quote = None
+            continue
+        if character in ("'", '"'):
+            quote = character
+            continue
+        if character == "{":
+            return index
+        if character == "\n" and index - start > 4096:
+            break
+    raise ValueError("GRUB command opening brace is absent")
+
+
+def find_close_brace(text: str, opening: int) -> int:
+    depth = 0
+    quote: str | None = None
+    escaped = False
+    for index in range(opening, len(text)):
+        character = text[index]
+        if escaped:
+            escaped = False
+            continue
+        if character == "\\":
+            escaped = True
+            continue
+        if quote:
+            if character == quote:
+                quote = None
+            continue
+        if character in ("'", '"'):
+            quote = character
+            continue
+        if character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    raise ValueError("GRUB command closing brace is absent")
+
+
+def command_blocks(text: str, keyword: str) -> list[tuple[str, str]]:
+    pattern = re.compile(rf"(?m)^[ \t]*{re.escape(keyword)}\b")
+    blocks: list[tuple[str, str]] = []
+    cursor = 0
+    while True:
+        match = pattern.search(text, cursor)
+        if not match:
+            break
+        opening = find_open_brace(text, match.end())
+        closing = find_close_brace(text, opening)
+        blocks.append((text[match.start():opening], text[opening + 1:closing]))
+        cursor = closing + 1
+    return blocks
+
+
+def extract_id(header: str) -> str | None:
+    patterns = (
+        re.compile(rf"--id(?:=|\s+)(?:'|\")?({ID_PATTERN})(?:'|\")?"),
+        re.compile(
+            rf"\$menuentry_id_option\s+(?:'|\")({ID_PATTERN})(?:'|\")"
+        ),
+    )
+    found: list[str] = []
+    for pattern in patterns:
+        found.extend(pattern.findall(header))
+    unique = list(dict.fromkeys(found))
+    if len(unique) > 1:
+        raise ValueError("GRUB command has multiple IDs")
+    return unique[0] if unique else None
+
+
+def loads_lts_kernel(body: str) -> bool:
+    return bool(
+        re.search(
+            r"(?m)^[ \t]*linux(?:efi)?[ \t]+[^\n]*"
+            r"(?:^|/)vmlinuz-linux-lts(?:[ \t]|$)",
+            body,
+        )
+    )
+
+
+def parse_lts_selector(text: str) -> str:
+    candidates: list[str] = []
+    for submenu_header, submenu_body in command_blocks(text, "submenu"):
+        submenu_id = extract_id(submenu_header)
+        for entry_header, entry_body in command_blocks(
+            submenu_body, "menuentry"
+        ):
+            if not loads_lts_kernel(entry_body):
+                continue
+            if submenu_id is None:
+                raise ValueError("LTS submenu ID is absent")
+            entry_id = extract_id(entry_header)
+            if entry_id is None:
+                raise ValueError("LTS menuentry ID is absent")
+            candidates.append(f"{submenu_id}>{entry_id}")
+
+    if len(candidates) != 1:
+        raise ValueError(
+            f"expected exactly one Linux LTS entry, found {len(candidates)}"
+        )
+    return candidates[0]
+
+
+def run_checked(command: list[str]) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(
+        command,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise PreparationError(
+            f"command failed ({completed.returncode}): {' '.join(command)}"
+            + (f": {detail}" if detail else "")
+        )
+    return completed
+
+
+def write_atomic(path: Path, data: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=f".{path.name}.", dir=path.parent
+    )
+    temporary_path = Path(temporary)
+    try:
+        os.fchmod(descriptor, 0o644)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    except Exception:
+        temporary_path.unlink(missing_ok=True)
+        raise
+
+
+def emit_serial(data: dict[str, object]) -> bool:
+    line = PREFIX + json.dumps(data, sort_keys=True)
+    for target in ("/dev/ttyS0", "/dev/console"):
+        try:
+            with open(target, "w", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+            return True
+        except OSError:
+            continue
+    return False
+
+
+def prepare_lts_boot() -> dict[str, object]:
+    try:
+        config = GRUB_CONFIG.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise PreparationError("cannot read installed GRUB configuration") from exc
+
+    selector = parse_lts_selector(config)
+    run_checked(["grub-reboot", selector])
+    observed = run_checked(
+        ["grub-editenv", str(GRUB_ENV), "list"]
+    ).stdout.splitlines()
+    expected = f"next_entry={selector}"
+    if expected not in observed:
+        raise PreparationError(
+            "GRUB next_entry readback mismatch: "
+            f"expected {expected!r}, observed {observed!r}"
+        )
+    return {
+        "schema": 1,
+        "requested": "linux-lts",
+        "selector": selector,
+        "verified": True,
+    }
+
+
+def main() -> int:
+    if not evidence_enabled() or LIVE_MARKER.exists():
+        return 0
+
+    requested = marker_value(REQUEST_MARKER)
+    if not requested:
+        return 0
+    if requested != "linux-lts":
+        print(f"unsupported GRUB one-shot request: {requested}", file=sys.stderr)
+        return 1
+
+    try:
+        data = prepare_lts_boot()
+        write_atomic(OUTPUT, data)
+        if not emit_serial(data):
+            raise PreparationError("cannot emit GRUB one-shot evidence")
+        run_checked(["sync"])
+        run_checked(["systemctl", "poweroff"])
+    except (OSError, ValueError, PreparationError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
