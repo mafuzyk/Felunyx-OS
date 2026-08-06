@@ -60,6 +60,10 @@ Trusted build workflow run `30951476281` produced the artifact:
 
 This artifact proves that one development build completed and was uploaded. It predates the guest-side hardening in PR #5, so it cannot inherit the new live, installed, GRUB, Calamares-failure, or workflow validation. It must not be used to claim that the hardened Virtual gate passed.
 
+## Known boot defect in the second development artifact
+
+The trusted build run `31030910170` produced an ISO that reaches `systemd-boot` but fails to boot with `Error preparing initrd: Not found` and falls through to PXE. Root cause: the live entries under `iso/profile/efiboot/loader/entries/` and `iso/profile/syslinux/syslinux.cfg` referenced external `amd-ucode.img` and `intel-ucode.img` payloads, but `mkarchiso` v89 only copies external microcode images when the initramfs lacks embedded microcode; the Felunyx initramfs embeds microcode through its configured `microcode` hook, so those files were never present in the final image. This was corrected by referencing only the kernel and initramfs, matching the locked `releng` v89 profile, and a fail-closed payload validator now rejects any ISO whose EFI/syslinux entries reference missing files. This artifact must not be used for the Virtual gate because its live entries are broken.
+
 ## Remote gate
 
 **State: pending.**

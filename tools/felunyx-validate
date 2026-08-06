@@ -46,6 +46,38 @@ def package_paths(pacman:str,config:Path,package:str):
         raise RuntimeError(f'{package}: {detail}')
     return {path for raw in result.stdout.splitlines() if (path:=raw.strip().lstrip('/')) and not path.endswith('/')}
 
+def check_efi_payload(iso:Path):
+    """Compare systemd-boot entry payload references against the ISO content.
+
+    Every linux/initrd/efi path referenced by an entry under loader/entries/
+    must exist inside the final image. Missing microcode images were silently
+    allowed and broke UEFI boot, so references are validated fail closed.
+    """
+    bsdtar = shutil.which('bsdtar')
+    if not bsdtar:
+        return [{'name':'efi-payload-complete','status':'fail','detail':'bsdtar is required'}]
+    listing = subprocess.run([bsdtar,'-tf',str(iso)], check=False, text=True, capture_output=True)
+    if listing.returncode:
+        return [{'name':'efi-payload-complete','status':'fail','detail':listing.stderr.strip() or f'bsdtar exited {listing.returncode}'}]
+    present = {path.strip().lstrip('/') for path in listing.stdout.splitlines() if path.strip()}
+    entries = [path for path in listing.stdout.splitlines() if path.startswith('loader/entries/') and path.endswith('.conf')]
+    if not entries:
+        return [{'name':'efi-payload-complete','status':'fail','detail':'ISO contains no loader/entries/*.conf'}]
+    missing = []
+    for entry in entries:
+        content = subprocess.run([bsdtar,'-xOf',str(iso),entry], check=False, text=True, capture_output=True)
+        if content.returncode:
+            missing.append(f'{entry}:unreadable')
+            continue
+        for line in content.stdout.splitlines():
+            fields = line.split()
+            if len(fields) < 2 or fields[0] not in ('linux','initrd','efi'):
+                continue
+            reference = fields[1].lstrip('/')
+            if reference not in present:
+                missing.append(f'{entry}:{fields[1]}')
+    return [{'name':'efi-payload-complete','status':'pass' if not missing else 'fail','detail':','.join(missing) or f'{len(entries)} entries reference only present files'}]
+
 def check_package_ownership(p:Path):
     config=p/'pacman.conf'; pacman=shutil.which('pacman')
     if not pacman or not config.exists() or '@FELUNYX_REPO_URI@' in config.read_text(): return []
@@ -64,7 +96,9 @@ def main():
     checks=check_profile(ns.profile)+check_package_ownership(ns.profile)
     if ns.iso:
         ok=ns.iso.is_file(); checks.append({"name":"iso-present","status":"pass" if ok else "fail","detail":str(ns.iso)})
-        if ok: checks.append({"name":"iso-sha256","status":"pass","detail":hashlib.sha256(ns.iso.read_bytes()).hexdigest()})
+        if ok:
+            checks.append({"name":"iso-sha256","status":"pass","detail":hashlib.sha256(ns.iso.read_bytes()).hexdigest()})
+            checks.extend(check_efi_payload(ns.iso))
     status='pass' if all(x['status']=='pass' for x in checks) else 'fail'
     atomic(ns.report,{"schema":1,"status":status,"checks":checks})
     return 0 if status=='pass' else 1
