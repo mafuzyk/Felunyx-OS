@@ -33,6 +33,7 @@ Root documents define the project-wide contract:
 
 - [Phase 1 foundation design](superpowers/specs/2026-08-03-felunyx-foundation-design.md)
 - [Phase 2 reproducible ISO design](superpowers/specs/2026-08-04-phase-2-reproducible-iso-design.md)
+- [Work Environments design — proposed isolated preparation](superpowers/specs/2026-08-05-work-environments-design.md)
 
 ## Superpowers implementation plans
 
@@ -41,11 +42,13 @@ Root documents define the project-wide contract:
 ## Research
 
 - [Phase 2 source ledger](research/phase-2-source-ledger.md)
+- [Work Environments feasibility source ledger](research/work-environments-source-ledger.md)
 
 ## Status
 
 - [Phase 1 foundation](status/phase-1-foundation.md)
 - [Phase 2 reproducible ISO](status/phase-2-reproducible-iso.md)
+- [Work Environments isolated preparation](status/work-environments-preparation.md)
 
 ## Documentation rules
 
