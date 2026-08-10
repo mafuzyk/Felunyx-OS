@@ -2,7 +2,7 @@
 
 ## Status
 
-This document defines the target architecture approved during Phase 1. It is intentionally implementation-oriented enough to guide later plans, while avoiding invented APIs before their owning phase begins.
+This document defines the target architecture approved during Phase 1 and updated by later accepted decisions. It is intentionally implementation-oriented enough to guide later plans, while avoiding invented APIs before their owning phase begins.
 
 ## Architectural shape
 
@@ -203,9 +203,20 @@ The native desktop is:
 
 - Wayland-only as an official session;
 - XWayland-compatible for legacy applications;
-- built in Rust on Smithay;
+- Rust-first in compositor and policy code;
+- derived from a mature Wayland compositor foundation rather than rebuilding low-level compositor infrastructure unnecessarily;
+- expected to preserve the Rust + Smithay technology lineage when the prototype validates it;
 - rendered and presented through Qt 6/QML for shell and graphical applications;
 - divided into compositor, shell, settings, Central, greeter, and platform services.
+
+The preferred first Phase 8 prototype foundation is `pop-os/cosmic-comp`. That preference is provisional: Felunyx does not adopt the COSMIC desktop, shell, configuration model, or private services merely because the compositor currently depends on them. The prototype must prove that the useful low-level compositor foundation can be separated from unnecessary COSMIC-specific policy while retaining a sustainable upstream synchronization path.
+
+Compositor ownership is split conceptually into two zones:
+
+- **upstream-derived foundation** — hardware discovery, DRM/KMS, render/input plumbing, standard Wayland protocol implementation, XWayland lifecycle, output plumbing, presentation infrastructure, and generic compatibility work should stay close to the mature upstream foundation where sustainable;
+- **Felunyx compositor policy** — workspace identity and lifecycle, Floating/Snap/Tiling/Rolling/Monocle, transversal stacks, focus and placement policy, deterministic transitions, rules, Work Environment integration, compositor-owned restoration, and semantic shell state are Felunyx responsibilities.
+
+Generic fixes in the upstream-derived zone should be proposed upstream where practical. Felunyx must not create unrelated rewrites in that zone merely to make the fork appear independent. The size and location of the Felunyx delta must remain measurable.
 
 The compositor continues functioning if the shell restarts. Central and Settings are separate applications. Privileged operations do not run inside QML.
 
@@ -362,4 +373,5 @@ The following must remain true unless superseded by an accepted architecture dec
 - rules organize; Sets may launch;
 - desktop profiles share the platform;
 - the native desktop does not block the distribution’s first usable releases;
+- mature upstream compositor infrastructure is reused where that reduces maintenance without surrendering Felunyx-owned desktop policy;
 - user data is preserved by default during system restoration.

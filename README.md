@@ -4,7 +4,7 @@
 
 Felunyx OS is an Arch-based Linux distribution built around visual authorship, comfort, transparency, reversible change, and a coherent desktop experience.
 
-Its long-term desktop is Wayland-native and built with Rust, Smithay, and Qt/QML. Before that desktop becomes the default, Felunyx will ship a polished reference experience on KDE Plasma and later provide equally intentional XFCE and Hyprland profiles.
+Its long-term desktop is Wayland-native, follows a Rust + Smithay compositor lineage derived from a mature compositor foundation, and uses Qt/QML for the shell and graphical system applications. `pop-os/cosmic-comp` is the preferred first Phase 8 prototype foundation, not a decision to ship the COSMIC desktop. Before that desktop becomes the default, Felunyx will ship a polished reference experience on KDE Plasma and later provide equally intentional XFCE and Hyprland profiles.
 
 **Pronunciation:** *fe-lú-nix*.
 
@@ -43,7 +43,7 @@ The guiding sentence is:
 - **Bootloader:** GRUB recommended; Limine available as an explicit alternative
 - **Initial reference desktop:** KDE Plasma
 - **Additional official profiles:** XFCE and Hyprland after the shared platform stabilizes
-- **Future native desktop:** Wayland-only, Rust + Smithay compositor, Qt 6/QML shell and applications
+- **Future native desktop:** Wayland-only; mature compositor foundation with Rust + Smithay as the preferred lineage; `cosmic-comp` is the provisional first prototype base; Qt 6/QML shell and applications remain Felunyx-owned
 - **System UI:** Felunyx Central, Felunyx Settings, recovery UI, and a shared design system
 - **Package sources:** Felunyx repository → Arch repositories → curated AUR → Flatpak → Nix
 - **Updates:** unified transactions, risk analysis, targeted snapshots, explicit confirmation
@@ -78,6 +78,7 @@ The detailed gates and deliverables are in [ROADMAP.md](ROADMAP.md).
 - [Phase 2 status](docs/status/phase-2-reproducible-iso.md)
 - [Documentation index](docs/README.md)
 - [Foundation design specification](docs/superpowers/specs/2026-08-03-felunyx-foundation-design.md)
+- [Native compositor foundation design](docs/superpowers/specs/2026-08-09-native-compositor-foundation-design.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 

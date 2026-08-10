@@ -42,7 +42,7 @@ Statuses:
 | ID | Status | Decision |
 |---|---|---|
 | D-019 | Accepted | The official native session is Wayland-only, with XWayland started on demand for compatibility. |
-| D-020 | Accepted | The compositor is written in Rust on Smithay. |
+| D-020 | Superseded | The compositor is written in Rust on Smithay. Superseded by D-105 and D-106: Rust + Smithay remains the preferred technology lineage, but Felunyx no longer assumes the compositor should be assembled directly from bare Smithay building blocks. |
 | D-021 | Accepted | Shell and graphical system applications use Qt 6/QML. |
 | D-022 | Accepted | QML owns presentation; Rust owns state, validation, policy, and privileged behavior. |
 | D-023 | Accepted | Compositor, shell, Central, Settings, greeter, and services are separate failure domains. |
@@ -177,6 +177,8 @@ Statuses:
 | D-102 | Accepted | Validation is divided into Remote (R), Virtual (V), and Hardware (H) gates; every completion claim names the strongest gate actually passed. |
 | D-103 | Accepted | A phase blocked only by an unavailable V or H gate may permit isolated preparatory work for the next phase without marking either phase complete. |
 | D-104 | Accepted | Missing physical access is mitigated through primary-source review, static validation, reference comparison, and explicit pending V/H tests; documentation conformity is never reported as runtime proof. |
+| D-105 | Accepted | The native Felunyx compositor derives from a mature Wayland compositor foundation rather than rebuilding low-level compositor infrastructure unnecessarily. Low-level backend and protocol work stays upstream-derived where sustainable; Felunyx owns workspace, layout, stack, focus, restoration, rules, Work Environment integration, and shell-facing policy. |
+| D-106 | Provisional | `pop-os/cosmic-comp` is the preferred first Phase 8 compositor foundation because it preserves the Rust + Smithay lineage. Long-term adoption requires explicit decoupling from unnecessary COSMIC desktop services, compatibility validation, a replaceable Qt/QML shell boundary, and a sustainable upstream synchronization delta. |
 
 ## Changing a decision
 
