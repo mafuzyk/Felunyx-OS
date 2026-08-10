@@ -9,8 +9,10 @@ It is a long-term component, not a prerequisite for the first useful Felunyx rel
 ## Technology
 
 - Wayland-only official session
-- Rust
-- Smithay
+- Rust-first compositor and policy code
+- Smithay technology lineage when validated by the prototype
+- mature compositor foundation rather than a bare-Smithay implementation by default
+- `pop-os/cosmic-comp` as the preferred first Phase 8 prototype foundation
 - Qt 6
 - QML/Qt Quick
 - XWayland on demand
@@ -18,6 +20,54 @@ It is a long-term component, not a prerequisite for the first useful Felunyx rel
 - standard portals
 - custom Wayland protocols only for compositor-owned behavior
 - CXX-Qt only where an in-process Rust/Qt object model is justified
+
+`cosmic-comp` is a provisional implementation foundation, not the Felunyx desktop product. Felunyx does not adopt the COSMIC shell, visual language, settings model, or private services merely because they are present in the upstream compositor stack.
+
+## Compositor foundation strategy
+
+Felunyx applies selective ownership to the compositor itself: reuse mature upstream infrastructure that does not define the Felunyx experience, and own the policy that does.
+
+The preferred prototype begins from a pinned, known-good `cosmic-comp` revision. Before that foundation can become long-term architecture, the prototype must prove three things:
+
+1. **Decoupling:** COSMIC-specific configuration, protocols, settings-daemon integration, presentation libraries, and shell assumptions can be kept, replaced, or removed with explicit rationale rather than silently becoming Felunyx platform contracts.
+2. **Product control:** Felunyx can own workspace, layout, stack, focus, rule, restoration, and Work Environment behavior without invasive rewrites of unrelated low-level backend code.
+3. **Sustainable inheritance:** a newer upstream revision can be integrated at acceptable cost, with the Felunyx delta remaining measurable and generic fixes having a plausible upstream path.
+
+The compositor is therefore treated as two conceptual ownership zones.
+
+### Upstream-derived foundation
+
+Felunyx should minimize unnecessary divergence in:
+
+- DRM/KMS and device discovery;
+- GBM/EGL and renderer plumbing;
+- low-level libinput and seat integration;
+- output enumeration and mode setting;
+- frame and presentation primitives;
+- standard Wayland protocol support;
+- XWayland lifecycle and generic compatibility plumbing;
+- direct-scanout and cursor/surface plumbing;
+- hardware quirks that are not Felunyx product policy.
+
+When a change in this zone is generally useful, upstream contribution is preferred over a Felunyx-only patch.
+
+### Felunyx compositor policy
+
+Felunyx deliberately owns:
+
+- stable output, workspace, window, and stack identities;
+- monitor-local dynamic workspace behavior;
+- Floating, Snap, Tiling, Rolling, and Monocle modes;
+- transversal stacks and tab semantics;
+- deterministic mode transitions and previews;
+- focus and placement policy;
+- application rules that organize but do not launch;
+- compositor-side Work Environment integration;
+- compositor-owned serialization and restoration;
+- semantic state exposed to shell and platform services;
+- Felunyx-specific compositor protocols only where standard protocols cannot express required behavior.
+
+KWin, Niri, and other mature compositors remain comparison and fallback references. If `cosmic-comp` fails the decoupling, compatibility, or maintenance gates, Phase 8 must compare alternatives instead of forcing the fork through.
 
 ## Process boundaries
 
@@ -53,7 +103,7 @@ Qt/QML process owning:
 - mode-switch preview;
 - workspace interactions.
 
-A shell crash does not terminate compositor-managed applications.
+The shell is Felunyx-owned even when the compositor derives from `cosmic-comp`. A shell crash does not terminate compositor-managed applications.
 
 ### Settings
 
@@ -119,7 +169,7 @@ Each primary mode implements a common layout strategy contract conceptually resp
 - restore;
 - validate minimum sizes.
 
-Exact Rust traits are defined during the desktop implementation plan, after the prototype clarifies data ownership.
+Exact Rust traits are defined during the desktop implementation plan, after the prototype clarifies data ownership and inherited compositor boundaries.
 
 ### Stacks
 
@@ -167,6 +217,8 @@ The shell needs structured access to:
 The protocol sends semantic state rather than screenshots.
 
 Security-sensitive operations remain authenticated through appropriate system services, not compositor convenience protocols.
+
+No COSMIC-specific private interface is adopted as a stable Felunyx public contract merely because it exists in the prototype foundation.
 
 ## Rendering and design system
 
@@ -227,7 +279,22 @@ Session restoration uses application-native mechanisms first. The compositor doe
 
 ## Prototype gate
 
-The desktop architecture is reconsidered if the prototype cannot reasonably support:
+Phase 8 begins from a pinned mature compositor baseline rather than assuming a new compositor skeleton must be assembled from bare Smithay.
+
+The prototype sequence must:
+
+1. build and run a known-good upstream `cosmic-comp` revision without Felunyx changes;
+2. prove nested and TTY launch on the declared test matrix;
+3. establish a repeatable upstream-sync baseline;
+4. inventory COSMIC-specific configuration, protocol, settings-daemon, shell, and presentation coupling;
+5. replace or bridge only enough of that coupling to start a minimal Felunyx Qt/QML shell;
+6. prove Wayland and XWayland applications survive shell restart;
+7. implement at least one clearly Felunyx-specific workspace behavior as a vertical slice;
+8. measure and classify the resulting patch delta;
+9. integrate a newer upstream revision and measure synchronization cost;
+10. decide whether `cosmic-comp` becomes the accepted long-term foundation or whether another mature compositor base should be evaluated.
+
+The architecture is reconsidered if the prototype cannot reasonably support:
 
 - nested and TTY launch;
 - two-monitor hotplug;
@@ -239,8 +306,10 @@ The desktop architecture is reconsidered if the prototype cannot reasonably supp
 - shell restart;
 - floating;
 - one smart tiling layout;
-- one rolling layout;
+- one Felunyx-specific nontrivial layout path such as Rolling;
 - stacks;
-- deterministic serialization and restore.
+- deterministic serialization and restore;
+- a clean Qt/QML shell boundary;
+- sustainable upstream synchronization.
 
-Choosing Smithay is an accepted direction, not permission to ignore evidence from implementation.
+Rust + Smithay is the preferred lineage and `cosmic-comp` is the preferred first foundation, but neither preference overrides implementation evidence.
