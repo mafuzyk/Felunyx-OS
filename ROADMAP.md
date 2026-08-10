@@ -56,7 +56,7 @@ A phase requires only the gates relevant to its promise. Passing R never implies
 - Linux Zen and Linux LTS;
 - systemd boot path;
 - Btrfs automatic-layout prototype;
-- GRUB default path and Limine experimental path;
+- GRUB as the only installed and validated Phase 2 bootloader path; Limine remains isolated research;
 - minimal Calamares integration;
 - KDE-only internal profile;
 - virtual-machine boot tests;
@@ -68,7 +68,7 @@ A phase requires only the gates relevant to its promise. Passing R never implies
 - ISO boots in supported test VMs;
 - live session starts;
 - Calamares can install the internal KDE profile to a disposable VM;
-- installed system reboots through the selected bootloader;
+- installed system reboots through GRUB;
 - Linux LTS fallback is visible and bootable;
 - build and smoke-test commands are documented;
 - failures produce retained logs and artifacts.
@@ -223,33 +223,47 @@ A phase requires only the gates relevant to its promise. Passing R never implies
 
 ## Phase 8 — Native Felunyx Desktop prototype
 
-**Goal:** validate the architectural bets behind the future desktop.
+**Goal:** validate the architectural bets behind the future desktop while proving that a mature compositor foundation can be adapted sustainably.
 
 This is a parallel research and implementation track that may begin experimentally earlier, but it does not become an official install profile before this gate.
 
+`pop-os/cosmic-comp` is the preferred first prototype foundation because it preserves the Rust + Smithay lineage while already providing mature compositor infrastructure. This preference is provisional: the phase must prove that Felunyx can separate useful low-level infrastructure from unnecessary COSMIC-specific policy and services without creating an unsustainable fork.
+
 ### Scope
 
-- Rust + Smithay compositor skeleton;
+- pin and build a known-good mature compositor baseline, beginning with `cosmic-comp`;
 - nested and TTY launch;
+- establish a repeatable upstream synchronization baseline before large Felunyx changes;
+- inventory COSMIC-specific configuration, protocol, settings-daemon, shell, presentation-library, workspace, output, input, and accessibility coupling;
+- replace or bridge only enough COSMIC-specific integration to start a minimal Felunyx Qt/QML shell;
+- prove shell restart without compositor-managed application loss;
 - multi-monitor hotplug;
 - fractional scaling;
 - XWayland on demand;
 - portals and screen sharing;
 - input methods;
 - tablet input;
-- Qt/QML shell process;
-- Floating, one Tiling prototype, one Rolling prototype, and stacks;
-- shell restart without compositor loss;
+- Floating plus at least one clearly Felunyx-specific nontrivial workspace behavior as a vertical slice;
+- Tiling, Rolling, and stack architecture validation;
+- deterministic compositor-state serialization and restoration;
+- classify the Felunyx patch delta as upstream-retained, adaptation boundary, Felunyx policy, or upstream candidate;
+- integrate a newer upstream revision and measure synchronization cost;
 - Settings integration.
 
 ### Exit criteria
 
 - the prototype passes the declared hardware and protocol matrix;
-- shell crashes do not destroy compositor state;
-- window-mode transitions have deterministic tests;
+- shell crashes do not destroy compositor state or terminate compositor-managed applications;
+- the Felunyx Qt/QML shell can operate without adopting the COSMIC shell architecture;
+- COSMIC-specific dependencies have explicit keep/replace/remove rationale and do not silently become Felunyx public contracts;
+- Felunyx-owned workspace, layout, stack, focus, rule, Work Environment, and restoration policy can remain structurally separated from low-level upstream-derived backend plumbing;
+- window-mode transitions and restoration have deterministic tests;
 - performance is measured rather than assumed;
-- upstream patch burden is documented;
-- the project decides whether the desktop enters preview, continues research, or changes architecture.
+- the size and location of the Felunyx patch delta are documented;
+- at least one newer upstream compositor revision is integrated during the prototype so merge/rebase burden is measured rather than guessed;
+- inherited license and attribution obligations are documented;
+- the project explicitly decides whether `cosmic-comp` becomes the accepted long-term foundation, another mature compositor foundation is evaluated, or the desktop remains research;
+- no result is promoted beyond the strongest R/V/H evidence actually achieved.
 
 ---
 
