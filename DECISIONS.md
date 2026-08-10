@@ -142,7 +142,7 @@ Statuses:
 |---|---|---|
 | D-083 | Accepted | The brand is “Felunyx”; “Felunyx OS” is the formal distribution name. |
 | D-084 | Accepted | The visual foundation is graphite with restrained blue/violet accents and a subtle ethereal edge. |
-| D-085 | Accepted | The lynx mark balances geometric minimalism with expressive stylization. |
+| D-085 | Superseded | The lynx mark balances geometric minimalism with expressive stylization. Superseded by D-107: the lynx remains part of Felunyx identity as a mascot and secondary emblem, but no longer owns the primary brand-mark role. |
 | D-086 | Accepted | StartAllBack is an ergonomic launcher/taskbar reference only, never a direct visual reference. |
 | D-087 | Accepted | The project begins as a phased monorepo. Components split into separate repositories only when ownership, release cadence, or access requirements justify it. |
 | D-088 | Accepted | The repository is licensed under GPL-3.0 unless a component states another compatible license. |
@@ -179,6 +179,15 @@ Statuses:
 | D-104 | Accepted | Missing physical access is mitigated through primary-source review, static validation, reference comparison, and explicit pending V/H tests; documentation conformity is never reported as runtime proof. |
 | D-105 | Accepted | The native Felunyx compositor derives from a mature Wayland compositor foundation rather than rebuilding low-level compositor infrastructure unnecessarily. Low-level backend and protocol work stays upstream-derived where sustainable; Felunyx owns workspace, layout, stack, focus, restoration, rules, Work Environment integration, and shell-facing policy. |
 | D-106 | Provisional | `pop-os/cosmic-comp` is the preferred first Phase 8 compositor foundation because it preserves the Rust + Smithay lineage. Long-term adoption requires explicit decoupling from unnecessary COSMIC desktop services, compatibility validation, a replaceable Qt/QML shell boundary, and a sustainable upstream synchronization delta. |
+| D-107 | Accepted | The primary Felunyx brand mark is a simple, recognizable stylized `F` suitable for small and large surfaces. The lynx remains the project mascot and may appear as a secondary emblem or expressive identity asset, but it is not the primary logo. |
+
+### D-085 → D-107 identity migration
+
+The primary-mark decision changed after comparative visual exploration for the Felunyx public website. The stylized `F` remained clearer at favicon, navigation, application-icon, splash, and large editorial scales, while a literal or dominant lynx mark was better suited to expressive mascot use.
+
+Compatibility and migration effects are intentionally small: the graphite/blue/violet visual foundation in D-084 is unchanged; existing lynx artwork remains valid as mascot or secondary branding; future primary-brand assets should use the `F`; no system architecture, package contract, desktop behavior, or active Phase 2 validation gate changes because of this identity decision.
+
+The approved Felunyx website design in `mafuzyk/Playground` is the first consumer of D-107. Exact vector geometry, clear-space rules, monochrome variants, and export assets remain implementation details of the brand system rather than new product decisions.
 
 ## Changing a decision
 
