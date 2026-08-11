@@ -1,0 +1,85 @@
+from pathlib import Path
+
+def read(name): return Path('packages/felunyx-calamares-config',name).read_text()
+
+def test_sequence_has_no_tracking_and_generates_initramfs():
+    s=read('settings.conf')
+    assert 'tracking' not in s
+    assert 'summary' in s
+    assert 'partition, mount, unpackfs' in s
+    assert 'initcpiocfg, initcpio, bootloader' in s
+
+def test_partition_policy_is_safe():
+    p=read('partition.conf')
+    for value in ('mountPoint: /boot/efi','recommendedSize: 1GiB','minimumSize: 512MiB','initialPartitioningChoice: none','defaultPartitionTableType: gpt','defaultFileSystemType: btrfs'):
+        assert value in p
+    assert 'enableLuksAutomatedPartitioning: false' in p
+
+def test_btrfs_layout_and_mounts():
+    m=read('mount.conf')
+    for sub in ('/@','/@home','/@snapshots','/@cache','/@log','/@swap'):
+        assert sub in m
+    assert 'compress=zstd:1' in m
+    assert 'umask=0077' in m
+
+def test_unpackfs_uses_real_archiso_path_and_target_overlays():
+    u=read('unpackfs.conf')
+    assert '/run/archiso/bootmnt/felunyx/x86_64/airootfs.sfs' in u
+    assert '/run/archiso/airootfs' not in u
+    for path in ('/etc/default/grub','/etc/mkinitcpio.d/linux-zen.preset','/etc/mkinitcpio.d/linux-lts.preset'):
+        assert f'- "{path}"' in u
+        assert f'destination: "{path}"' in u
+
+def test_services_systemd_uses_unit_action_schema():
+    s=read('services-systemd.conf')
+    assert 'units:' in s
+    assert 'enabled:' not in s and 'disabled:' not in s
+    for unit in ('NetworkManager.service','sddm.service','qemu-guest-agent.service','sshd.service'):
+        assert unit in s
+
+def test_live_package_removed_and_grub_schema_is_real():
+    assert 'felunyx-iso-hooks' in read('packages.conf')
+    b=read('bootloader.conf')
+    assert 'efiBootLoader: "grub"' in b
+    assert 'grubInstall: "grub-install"' in b
+    assert 'kernel:' not in b and 'fallbackKernel:' not in b
+    grub=read('grub-default')
+    assert 'GRUB_TOP_LEVEL=/boot/vmlinuz-linux-zen' in grub
+
+def test_grub_template_is_applied_by_installer_not_owned_by_config_package():
+    p=Path('packages/felunyx-calamares-config/PKGBUILD').read_text()
+    assert '"$pkgdir/etc/default/grub"' not in p
+    assert '"$pkgdir/etc/calamares/preinstall_copy/etc/default/grub"' in p
+    u=read('unpackfs.conf')
+    assert 'source: "/etc/calamares/preinstall_copy/etc/default/grub"' in u
+    assert 'destination: "/etc/default/grub"' in u
+
+def test_calamares_presets_are_local_makepkg_sources():
+    package=Path('packages/felunyx-calamares-config')
+    p=(package/'PKGBUILD').read_text()
+    source_line=next(line for line in p.splitlines() if line.startswith('source=('))
+    for preset in ('linux-zen.preset','linux-lts.preset'):
+        assert (package/preset).is_file()
+        assert f"'{preset}'" in source_line
+        assert f'preinstall_copy/etc/mkinitcpio.d/{preset}' not in source_line
+        assert f'"$srcdir/{preset}"' in p
+
+def test_launcher_is_owned_and_branded_by_calamares_package():
+    framework=Path('packages/calamares/PKGBUILD').read_text()
+    config=Path('packages/felunyx-calamares-config/PKGBUILD').read_text()
+    assert "'felunyx-calamares.desktop'" in framework
+    assert '"$pkgdir/usr/share/applications/calamares.desktop"' in framework
+    assert '"$pkgdir/usr/share/applications/calamares.desktop"' not in config
+    desktop=Path('packages/calamares/felunyx-calamares.desktop').read_text()
+    assert 'Name=Install Felunyx OS' in desktop
+    assert 'Exec=pkexec calamares' in desktop
+
+def test_calamares_source_is_fixed_and_signed():
+    p=Path('packages/calamares/PKGBUILD').read_text()
+    assert 'pkgver=3.3.14' in p
+    assert '5547f80db067dea923ae693ba6bb88eb2b2eeac1da3ebec42fce453e31c290c0' in p
+    assert '1dcf71c518ca9a08f62ad6c6532001c46a72505bac7452e52c567cbd3021a076' in p
+    assert "validpgpkeys=('00ACD15E25A79FEE028B0EE57FEA3DA6169C77D6')" in p
+    assert 'tar.gz.asc' in p
+    assert 'tar.gz.sig' not in p
+    assert '-DINSTALL_CONFIG=OFF' in p and '-DWITH_QT6=ON' in p

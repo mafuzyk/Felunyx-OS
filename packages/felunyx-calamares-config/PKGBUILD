@@ -1,0 +1,19 @@
+pkgname=felunyx-calamares-config
+pkgver=0.1.0
+pkgrel=2
+pkgdesc='Felunyx OS Phase 2 Calamares configuration'
+arch=('any')
+license=('GPL-3.0-or-later')
+depends=('calamares' 'grub' 'efibootmgr' 'btrfs-progs')
+source=('settings.conf' 'partition.conf' 'mount.conf' 'packages.conf' 'bootloader.conf' 'unpackfs.conf' 'services-systemd.conf' 'initcpiocfg.conf' 'initcpio.conf' 'grub-default' 'branding.desc' 'linux-zen.preset' 'linux-lts.preset')
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+package() {
+  install -Dm0644 "$srcdir/settings.conf" "$pkgdir/etc/calamares/settings.conf"
+  for f in partition.conf mount.conf packages.conf bootloader.conf unpackfs.conf services-systemd.conf initcpiocfg.conf initcpio.conf; do
+    install -Dm0644 "$srcdir/$f" "$pkgdir/etc/calamares/modules/$f"
+  done
+  install -Dm0644 "$srcdir/grub-default" "$pkgdir/etc/calamares/preinstall_copy/etc/default/grub"
+  install -Dm0644 "$srcdir/linux-zen.preset" "$pkgdir/etc/calamares/preinstall_copy/etc/mkinitcpio.d/linux-zen.preset"
+  install -Dm0644 "$srcdir/linux-lts.preset" "$pkgdir/etc/calamares/preinstall_copy/etc/mkinitcpio.d/linux-lts.preset"
+  install -Dm0644 "$srcdir/branding.desc" "$pkgdir/etc/calamares/branding/felunyx/branding.desc"
+}

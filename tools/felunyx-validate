@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import argparse, hashlib, json, os, re, shutil, subprocess, tempfile
+from pathlib import Path
+REQUIRED_PACKAGES={"linux-zen","linux-lts","linux-firmware","amd-ucode","intel-ucode","btrfs-progs","grub","efibootmgr","networkmanager","plasma-meta","plasma-wayland-protocols","sddm","dolphin","konsole","calamares","felunyx-identity","felunyx-iso-hooks","felunyx-calamares-config","mkinitcpio-nfs-utils","nbd"}
+PACKAGE_OWNERSHIP_PAIRS=(
+    ("filesystem","felunyx-identity"),
+    ("calamares","felunyx-calamares-config"),
+    ("grub","felunyx-calamares-config"),
+)
+
+def atomic(path:Path,data:dict):
+    path.parent.mkdir(parents=True,exist_ok=True); fd,tmp=tempfile.mkstemp(prefix='.'+path.name+'.',dir=path.parent)
+    os.fchmod(fd,0o644)
+    with os.fdopen(fd,'w') as f: json.dump(data,f,indent=2,sort_keys=True); f.write('\n')
+    os.replace(tmp,path)
+
+def check_profile(p:Path):
+    checks=[]
+    def add(name,ok,detail=''): checks.append({"name":name,"status":"pass" if ok else "fail","detail":detail})
+    pkg=p/'packages.x86_64'; packages=set()
+    if pkg.exists(): packages={x.strip() for x in pkg.read_text().splitlines() if x.strip() and not x.lstrip().startswith('#')}
+    add('required-packages',REQUIRED_PACKAGES<=packages,','.join(sorted(REQUIRED_PACKAGES-packages)))
+    add('openssh-absent','openssh' not in packages)
+    profile=(p/'profiledef.sh').read_text() if (p/'profiledef.sh').exists() else ''
+    add('felunyx-name','iso_name="felunyx-os"' in profile)
+    add('install-dir-limit',bool(re.search(r'install_dir="felunyx"',profile)))
+    add('uefi-mode','uefi.systemd-boot' in profile)
+    add('bios-mode','bios.syslinux' in profile)
+    files='\n'.join(x.as_posix() for x in p.rglob('*')) if p.exists() else ''
+    add('zen-entry','felunyx-linux-zen.conf' in files)
+    add('lts-entry','felunyx-linux-lts.conf' in files)
+    private=[]
+    for f in p.rglob('*') if p.exists() else []:
+        if f.is_file():
+            try: text=f.read_text(errors='ignore')
+            except OSError: continue
+            if 'BEGIN OPENSSH PRIVATE KEY' in text or 'BEGIN PGP PRIVATE KEY BLOCK' in text: private.append(f.as_posix())
+    add('no-private-keys',not private,','.join(private))
+    return checks
+
+def package_paths(pacman:str,config:Path,package:str):
+    result=subprocess.run([pacman,'--config',str(config),'-Flq',package],check=False,capture_output=True,text=True)
+    if result.returncode:
+        detail=result.stderr.strip() or result.stdout.strip() or f'pacman exited {result.returncode}'
+        raise RuntimeError(f'{package}: {detail}')
+    return {path for raw in result.stdout.splitlines() if (path:=raw.strip().lstrip('/')) and not path.endswith('/')}
+
+def check_package_ownership(p:Path):
+    config=p/'pacman.conf'; pacman=shutil.which('pacman')
+    if not pacman or not config.exists() or '@FELUNYX_REPO_URI@' in config.read_text(): return []
+    checks=[]; cache={}
+    try:
+        for owner,custom in PACKAGE_OWNERSHIP_PAIRS:
+            for package in (owner,custom): cache.setdefault(package,package_paths(pacman,config,package))
+            overlaps=sorted(cache[owner]&cache[custom])
+            checks.append({"name":f'package-overlap:{owner}:{custom}',"status":"fail" if overlaps else "pass","detail":','.join(overlaps)})
+    except RuntimeError as error:
+        checks.append({"name":"package-ownership-query","status":"fail","detail":str(error)})
+    return checks
+
+def main():
+    ap=argparse.ArgumentParser(); ap.add_argument('--profile',type=Path,required=True); ap.add_argument('--iso',type=Path); ap.add_argument('--report',type=Path,required=True); ns=ap.parse_args()
+    checks=check_profile(ns.profile)+check_package_ownership(ns.profile)
+    if ns.iso:
+        ok=ns.iso.is_file(); checks.append({"name":"iso-present","status":"pass" if ok else "fail","detail":str(ns.iso)})
+        if ok: checks.append({"name":"iso-sha256","status":"pass","detail":hashlib.sha256(ns.iso.read_bytes()).hexdigest()})
+    status='pass' if all(x['status']=='pass' for x in checks) else 'fail'
+    atomic(ns.report,{"schema":1,"status":status,"checks":checks})
+    return 0 if status=='pass' else 1
+if __name__=='__main__': raise SystemExit(main())

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+source "$ROOT/tools/lib/common.sh"
+usage(){ echo "usage: ${0##*/} boot-live --iso ISO --kernel zen|lts --artifacts DIR | install --iso ISO --disk DISK --artifacts DIR | boot-installed --disk DISK --kernel zen|lts --artifacts DIR"; }
+cmd=${1:-}; shift || true
+iso= disk= kernel= artifacts= timeout=600
+while (($#)); do case $1 in --iso) iso=$2; shift 2;; --disk) disk=$2; shift 2;; --kernel) kernel=$2; shift 2;; --artifacts) artifacts=$2; shift 2;; --timeout) timeout=$2; shift 2;; *) usage >&2; exit 64;; esac; done
+[[ $cmd =~ ^(boot-live|install|boot-installed)$ ]] || { usage >&2; exit 64; }
+[[ -n $artifacts ]] || felunyx_die 'artifacts directory required'; mkdir -p "$artifacts"
+for c in qemu-system-x86_64 python3; do felunyx_require_command "$c"; done
+ovmf=$(find /usr/share/edk2 /usr/share/OVMF -type f -name 'OVMF_CODE*.fd' -print -quit 2>/dev/null || true)
+[[ -n $ovmf ]] || felunyx_die 'OVMF_CODE firmware not found'
+vars_src=$(find /usr/share/edk2 /usr/share/OVMF -type f -name 'OVMF_VARS*.fd' -print -quit 2>/dev/null || true)
+[[ -n $vars_src ]] || felunyx_die 'OVMF_VARS firmware not found'
+vars="$artifacts/OVMF_VARS.fd"; cp "$vars_src" "$vars"
+serial="$artifacts/${cmd}-${kernel:-default}.log"; qmp="$artifacts/qmp.sock"; rm -f "$qmp" "$serial"
+accel=tcg; cpu=max; [[ -r /dev/kvm && -w /dev/kvm ]] && { accel=kvm; cpu=host; }
+args=(-machine "q35,accel=$accel" -cpu "$cpu" -smp 2 -m 4096 -display none -serial "file:$serial" -qmp "unix:$qmp,server=on,wait=off" -no-reboot -drive "if=pflash,format=raw,readonly=on,file=$ovmf" -drive "if=pflash,format=raw,file=$vars" -fw_cfg name=opt/felunyx/evidence,string=1)
+case $cmd in
+ boot-live) [[ -f $iso && $kernel =~ ^(zen|lts)$ ]] || felunyx_die 'boot-live needs ISO and kernel'; args+=(-cdrom "$iso" -boot d);;
+ install) [[ -f $iso && -n $disk ]] || felunyx_die 'install needs ISO and disk path'; command -v qemu-img >/dev/null || felunyx_die 'qemu-img missing'; [[ -e $disk ]] || qemu-img create -f qcow2 "$disk" 64G; args+=(-cdrom "$iso" -boot d -drive "file=$disk,format=qcow2,if=virtio" -fw_cfg name=opt/felunyx/autoinstall,string=1); kernel=zen;;
+ boot-installed) [[ -f $disk && $kernel =~ ^(zen|lts)$ ]] || felunyx_die 'boot-installed needs disk and kernel'; args+=(-drive "file=$disk,format=qcow2,if=virtio");;
+esac
+qemu-system-x86_64 "${args[@]}" & pid=$!
+trap 'kill "$pid" 2>/dev/null || true' EXIT INT TERM
+if [[ $kernel == lts ]]; then sleep 2; python3 "$ROOT/tests/boot/qmp_sendkey.py" --socket "$qmp" down ret || true; fi
+if [[ $cmd == install ]]; then
+  python3 "$ROOT/tests/boot/expect_serial.py" --log "$serial" --prefix FELUNYX_INSTALL= --timeout "$timeout" || true
+  wait "$pid" || true
+  grep -q '"event": "success"' "$serial" || felunyx_die "semantic installer did not report success; see $serial"
+else
+  python3 "$ROOT/tests/boot/expect_serial.py" --log "$serial" --timeout "$timeout" --kernel "$kernel" --live "$([[ $cmd == boot-live ]] && echo true || echo false)"
+  kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+fi
+trap - EXIT INT TERM

@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "archiso_version": "89-1",
+  "upstream_repository": "https://github.com/archlinux/archiso",
+  "upstream_tag": "v89",
+  "archive_date": "2026/07/27",
+  "imported_blobs": {
+    "configs/releng/profiledef.sh": "87b1b2da25fb40d3d1a0fda01de1671805b2997d",
+    "configs/releng/packages.x86_64": "371b23a23c5fbaa7a6e28fe8fac58b1d800f3305",
+    "configs/releng/pacman.conf": "e7e6497b0c20529ef06f62535fb7f192dd3d3ea7",
+    "configs/releng/efiboot/loader/loader.conf": "06d4ac40d06ecdd1020aca37b46a28328216fd76",
+    "configs/releng/efiboot/loader/entries/01-archiso-linux.conf": "c35f66320a8468e2ad9ac4e53a9f07d4046f041f",
+    "configs/releng/airootfs/etc/mkinitcpio.conf.d/archiso.conf": "5c008e51fda2137bae3819a523f2c84ecb154629",
+    "configs/releng/airootfs/etc/mkinitcpio.d/linux.preset": "8e852051c4f85cfc41b28f60a714d06371eafa8e",
+    "configs/releng/syslinux/syslinux.cfg": "cbda72f2adb767853afc5bdde760ebd329326f0b",
+    "configs/releng/syslinux/archiso_sys.cfg": "662482c5de8c943e6f8ea38c49c82a07f348de81",
+    "configs/releng/syslinux/archiso_sys-linux.cfg": "d945c7a03c34f995bc0f9842870884a1a37db2f0"
+  }
+}

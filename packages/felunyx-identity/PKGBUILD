@@ -1,0 +1,30 @@
+pkgname=felunyx-identity
+pkgver=0.1.0
+pkgrel=2
+pkgdesc='Felunyx OS identity and immutable build provenance'
+arch=('any')
+license=('GPL-3.0-or-later')
+source=('os-release' 'felunyx-evidence' 'felunyx-evidence.service')
+sha256sums=('SKIP' 'SKIP' 'SKIP')
+
+package() {
+  : "${FELUNYX_SOURCE_COMMIT:?FELUNYX_SOURCE_COMMIT is required}"
+  : "${FELUNYX_ARCHIVE_DATE:?FELUNYX_ARCHIVE_DATE is required}"
+  : "${SOURCE_DATE_EPOCH:?SOURCE_DATE_EPOCH is required}"
+  install -Dm0644 "$srcdir/os-release" "$pkgdir/usr/lib/felunyx/os-release"
+  install -d "$pkgdir/etc" "$pkgdir/usr/lib/felunyx" "$pkgdir/usr/lib/systemd/system/multi-user.target.wants"
+  ln -s ../usr/lib/felunyx/os-release "$pkgdir/etc/os-release"
+  install -Dm0755 "$srcdir/felunyx-evidence" "$pkgdir/usr/lib/felunyx/felunyx-evidence"
+  install -Dm0644 "$srcdir/felunyx-evidence.service" "$pkgdir/usr/lib/systemd/system/felunyx-evidence.service"
+  ln -s ../felunyx-evidence.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/felunyx-evidence.service"
+  python - "$pkgdir/usr/lib/felunyx/build-info.json" <<'PY'
+import json, os, sys
+out={
+  "schema":1,"phase":2,"channel":"development","architecture":"x86_64",
+  "source_commit":os.environ["FELUNYX_SOURCE_COMMIT"],
+  "archive_date":os.environ["FELUNYX_ARCHIVE_DATE"],
+  "source_date_epoch":int(os.environ["SOURCE_DATE_EPOCH"]),
+}
+with open(sys.argv[1],"w",encoding="utf-8") as f: json.dump(out,f,indent=2,sort_keys=True); f.write("\n")
+PY
+}

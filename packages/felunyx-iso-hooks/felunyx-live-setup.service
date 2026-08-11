@@ -1,0 +1,14 @@
+[Unit]
+Description=Prepare the Felunyx live session
+ConditionPathExists=/run/felunyx/live
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemd-sysusers
+ExecStart=/usr/bin/systemd-tmpfiles --create /usr/lib/tmpfiles.d/felunyx-live.conf
+ExecStart=/usr/bin/chown -R live:live /home/live
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

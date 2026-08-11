@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import argparse, hashlib, json, os, shutil, sys, tempfile
+from pathlib import Path
+
+def inventory(root: Path) -> dict[str, dict[str,str]]:
+    out={}
+    for p in sorted(root.rglob('*')):
+        rel=p.relative_to(root).as_posix()
+        if p.is_symlink(): out[rel]={"type":"symlink","target":os.readlink(p)}
+        elif p.is_file(): out[rel]={"type":"file","sha256":hashlib.sha256(p.read_bytes()).hexdigest()}
+        elif p.is_dir(): out[rel]={"type":"dir"}
+    return out
+
+def digest(inv: dict) -> str:
+    return hashlib.sha256(json.dumps(inv,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+
+def report(source: Path, target: Path) -> dict:
+    a,b=inventory(source),inventory(target)
+    return {"schema":1,"source_digest":digest(a),"target_digest":digest(b),
+            "added":sorted(set(a)-set(b)),"removed":sorted(set(b)-set(a)),
+            "modified":sorted(k for k in set(a)&set(b) if a[k]!=b[k]),"source_inventory":a}
+
+def atomic_json(path: Path,data:dict)->None:
+    path.parent.mkdir(parents=True,exist_ok=True)
+    fd,tmp=tempfile.mkstemp(prefix='.'+path.name+'.',dir=path.parent)
+    with os.fdopen(fd,'w',encoding='utf-8') as f: json.dump(data,f,indent=2,sort_keys=True); f.write('\n')
+    os.replace(tmp,path)
+
+def main()->int:
+    ap=argparse.ArgumentParser()
+    sub=ap.add_subparsers(dest='cmd',required=True)
+    for name in ('check','apply'):
+        p=sub.add_parser(name); p.add_argument('--source',type=Path,required=True); p.add_argument('--target',type=Path,default=Path('iso/profile')); p.add_argument('--report',type=Path,required=True)
+        if name=='apply': p.add_argument('--yes',action='store_true')
+    ns=ap.parse_args()
+    if not ns.source.is_dir(): print('source must be a directory',file=sys.stderr); return 2
+    r=report(ns.source,ns.target) if ns.target.exists() else report(ns.source,Path(tempfile.mkdtemp()))
+    atomic_json(ns.report,r)
+    changed=bool(r['added'] or r['removed'] or r['modified'])
+    if ns.cmd=='check': return 3 if changed else 0
+    if not ns.yes: print('apply requires --yes',file=sys.stderr); return 64
+    expected=json.loads(ns.report.read_text())['source_digest']
+    if digest(inventory(ns.source))!=expected: print('source changed after report',file=sys.stderr); return 2
+    tmp=ns.target.with_name(ns.target.name+'.new')
+    if tmp.exists(): shutil.rmtree(tmp)
+    shutil.copytree(ns.source,tmp,symlinks=True)
+    old=ns.target.with_name(ns.target.name+'.old')
+    if old.exists(): shutil.rmtree(old)
+    if ns.target.exists(): os.replace(ns.target,old)
+    os.replace(tmp,ns.target)
+    if old.exists(): shutil.rmtree(old)
+    return 0
+if __name__=='__main__': raise SystemExit(main())

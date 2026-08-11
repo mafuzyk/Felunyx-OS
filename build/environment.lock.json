@@ -1,0 +1,36 @@
+{
+  "archiso": "89-1",
+  "base_image": "docker.io/archlinux/archlinux:base-devel-20260726.0.562248@sha256:cc47e23460a9172cc7bae82d655edfe7828b0e0bf3b337f512385e0f76ce0a42",
+  "calamares": {
+    "certificate_provenance": {
+      "identity_source": "https://calamares.io/pk-7FEA3DA6169C77D6.txt",
+      "identity_sha256": "46ed1304bf8db472de244a2647a3e04383753d5a3ccf55ce75660f7df0aee0b3",
+      "technical_update_source": "https://keys.openpgp.org/vks/v1/by-fingerprint/6D98B995A1CA6CE4BB906518C7AA337DFA13881E",
+      "technical_update_sha256": "86a20967e356756e7f19bdd24ef5d3b01a17e12c32d58400f9329ce004bc3cdf"
+    },
+    "primary_key_fingerprint": "00ACD15E25A79FEE028B0EE57FEA3DA6169C77D6",
+    "release_certificate_path": "keys/calamares/3.3.14-release-key.asc",
+    "release_certificate_sha256": "b3e5851676c35bc5506433ea77792e87594180581a420be9bdbc8d3f501c3789",
+    "release_signature_sha256": "1dcf71c518ca9a08f62ad6c6532001c46a72505bac7452e52c567cbd3021a076",
+    "signing_subkey_fingerprint": "6D98B995A1CA6CE4BB906518C7AA337DFA13881E",
+    "source_sha256": "5547f80db067dea923ae693ba6bb88eb2b2eeac1da3ebec42fce453e31c290c0",
+    "version": "3.3.14"
+  },
+  "default_archive_date": "2026/07/27",
+  "packages": [
+    "archiso=89-1",
+    "archlinux-keyring",
+    "curl",
+    "edk2-ovmf",
+    "git",
+    "gnupg",
+    "jq",
+    "libisoburn",
+    "python",
+    "python-pytest",
+    "qemu-desktop",
+    "shellcheck",
+    "sudo"
+  ],
+  "schema": 1
+}

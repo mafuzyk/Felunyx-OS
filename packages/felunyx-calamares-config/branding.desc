@@ -1,0 +1,19 @@
+componentName: felunyx
+welcomeStyleCalamares: true
+strings:
+  productName: Felunyx OS
+  shortProductName: Felunyx
+  version: Phase 2
+  shortVersion: phase2
+  versionedName: Felunyx OS Phase 2
+  shortVersionedName: Felunyx Phase 2
+  bootloaderEntryName: Felunyx OS
+  productUrl: https://github.com/mafuzyk/Felunyx-OS
+  supportUrl: https://github.com/mafuzyk/Felunyx-OS/issues
+  knownIssuesUrl: https://github.com/mafuzyk/Felunyx-OS/issues
+images: {}
+slideshow: none
+style:
+  sidebarBackground: "#15161d"
+  sidebarText: "#e8e9f2"
+  sidebarTextSelect: "#6f84ff"

@@ -1,0 +1,54 @@
+name: Virtual Phase 2 smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: Successful Build Phase 2 ISO workflow run ID
+        required: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Download trusted ISO artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ github.token }}
+          path: artifacts
+      - name: Install QEMU and OVMF
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes qemu-system-x86 qemu-utils ovmf python3
+      - name: Boot Zen and LTS live environments
+        run: |
+          set -Eeuo pipefail
+          iso=$(find artifacts -type f -name '*.iso' -print -quit)
+          test -n "$iso"
+          tools/felunyx-run-vm boot-live --iso "$iso" --kernel zen --artifacts virtual/zen --timeout 900
+          tools/felunyx-run-vm boot-live --iso "$iso" --kernel lts --artifacts virtual/lts --timeout 900
+      - name: Install and boot the target system
+        run: |
+          set -Eeuo pipefail
+          iso=$(find artifacts -type f -name '*.iso' -print -quit)
+          tools/felunyx-run-vm install --iso "$iso" --disk virtual/felunyx.qcow2 --artifacts virtual/install --timeout 2400
+          tools/felunyx-run-vm boot-installed --disk virtual/felunyx.qcow2 --kernel zen --artifacts virtual/installed-zen --timeout 900
+          tools/felunyx-run-vm boot-installed --disk virtual/felunyx.qcow2 --kernel lts --artifacts virtual/installed-lts --timeout 900
+      - name: Upload virtual evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: felunyx-phase2-virtual-${{ github.run_id }}
+          path: virtual/**/*.log
+          if-no-files-found: warn
+          retention-days: 14

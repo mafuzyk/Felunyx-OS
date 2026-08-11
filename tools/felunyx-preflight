@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=tools/lib/common.sh
+source "$ROOT/tools/lib/common.sh"
+
+usage() { printf 'usage: %s [--comparison] --json PATH\n' "${0##*/}"; }
+comparison=false
+output=
+while (($#)); do
+  case $1 in
+    --comparison) comparison=true; shift ;;
+    --json) [[ $# -ge 2 ]] || { usage >&2; exit 64; }; output=$2; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage >&2; exit 64 ;;
+  esac
+done
+[[ -n $output ]] || { usage >&2; exit 64; }
+
+required=$((10 * 1024 * 1024 * 1024))
+$comparison && required=$((20 * 1024 * 1024 * 1024))
+free_bytes=$(df -PB1 "${TMPDIR:-/tmp}" | awk 'NR==2 {print $4}')
+free_inodes=$(df -Pi "${TMPDIR:-/tmp}" | awk 'NR==2 {print $4}')
+cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf 1)
+ram_bytes=$(awk '/MemTotal:/ {print $2*1024}' /proc/meminfo 2>/dev/null || printf 0)
+root_ok=false; [[ $(id -u) -eq 0 ]] && root_ok=true
+loop_ok=false; compgen -G '/dev/loop*' >/dev/null && loop_ok=true
+kvm=false; [[ -r /dev/kvm && -w /dev/kvm ]] && kvm=true
+qemu=false; command -v qemu-system-x86_64 >/dev/null && qemu=true
+ovmf_path=$(find /usr/share/edk2 /usr/share/OVMF -type f \( -name 'OVMF_CODE*.fd' -o -name 'OVMF_CODE*.4m.fd' \) -print -quit 2>/dev/null || true)
+ovmf=false; [[ -n $ovmf_path ]] && ovmf=true
+mount_ok=false
+probe=$(mktemp -d)
+if [[ $(id -u) -eq 0 ]] && mount -t tmpfs -o size=1m tmpfs "$probe" 2>/dev/null; then
+  mount_ok=true
+  umount "$probe"
+fi
+rmdir "$probe"
+status=ok
+reasons=()
+[[ $root_ok == true ]] || reasons+=("root-required")
+[[ $mount_ok == true ]] || reasons+=("mount-capability-required")
+(( free_bytes >= required )) || reasons+=("insufficient-free-space")
+((${#reasons[@]} == 0)) || status=blocked
+python3 - "$output" "$status" "$comparison" "$free_bytes" "$free_inodes" "$required" "$cpus" "$ram_bytes" "$root_ok" "$mount_ok" "$loop_ok" "$kvm" "$qemu" "$ovmf" "$ovmf_path" "${reasons[*]}" <<'PY'
+import json, os, platform, sys, tempfile
+(path,status,comparison,free_bytes,free_inodes,required,cpus,ram,root_ok,mount_ok,loop_ok,kvm,qemu,ovmf,ovmf_path,reasons)=sys.argv[1:]
+data={
+ "schema":1,"status":status,"comparison":comparison=="true",
+ "architecture":platform.machine(),"kernel":platform.release(),"uid":os.getuid(),
+ "temporary_root":os.path.realpath(tempfile.gettempdir()),
+ "free_bytes":int(free_bytes),"free_inodes":int(free_inodes),"required_free_bytes":int(required),
+ "cpus":int(cpus),"ram_bytes":int(float(ram)),"root":root_ok=="true",
+ "mount_capability":mount_ok=="true","loop_devices":loop_ok=="true","kvm":kvm=="true",
+ "qemu":qemu=="true","ovmf":ovmf=="true","ovmf_path":ovmf_path or None,
+ "reasons":reasons.split() if reasons else []}
+os.makedirs(os.path.dirname(os.path.abspath(path)),exist_ok=True)
+tmp=path+".tmp"
+with open(tmp,"w",encoding="utf-8") as f: json.dump(data,f,indent=2,sort_keys=True); f.write("\n")
+os.replace(tmp,path)
+PY
+[[ $status == ok ]] || exit 2

@@ -1,0 +1,11 @@
+FROM docker.io/archlinux/archlinux:base-devel-20260726.0.562248@sha256:cc47e23460a9172cc7bae82d655edfe7828b0e0bf3b337f512385e0f76ce0a42
+
+RUN printf 'Server = https://archive.archlinux.org/repos/2026/07/27/$repo/os/$arch\n' > /etc/pacman.d/mirrorlist \
+ && pacman -Syyu --noconfirm \
+ && pacman -S --needed --noconfirm \
+      archiso=89-1 archlinux-keyring curl edk2-ovmf git jq libisoburn \
+      python python-pytest qemu-desktop shellcheck sudo gnupg \
+ && pacman -Scc --noconfirm
+
+WORKDIR /workspace
+ENTRYPOINT ["/bin/bash", "-lc"]
