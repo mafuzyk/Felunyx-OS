@@ -180,6 +180,7 @@ Statuses:
 | D-105 | Accepted | The native Felunyx compositor derives from a mature Wayland compositor foundation rather than rebuilding low-level compositor infrastructure unnecessarily. Low-level backend and protocol work stays upstream-derived where sustainable; Felunyx owns workspace, layout, stack, focus, restoration, rules, Work Environment integration, and shell-facing policy. |
 | D-106 | Provisional | `pop-os/cosmic-comp` is the preferred first Phase 8 compositor foundation because it preserves the Rust + Smithay lineage. Long-term adoption requires explicit decoupling from unnecessary COSMIC desktop services, compatibility validation, a replaceable Qt/QML shell boundary, and a sustainable upstream synchronization delta. |
 | D-107 | Accepted | The primary Felunyx brand mark is a simple, recognizable stylized `F` suitable for small and large surfaces. The lynx remains the project mascot and may appear as a secondary emblem or expressive identity asset, but it is not the primary logo. |
+| D-108 | Accepted | Felunyx does not prevent users from installing other desktop environments or window managers, but only official profiles receive Felunyx-validated integration, configuration, compatibility guarantees, and project support. Unofficial environments may work, but are outside that validation boundary. |
 
 ### D-085 → D-107 identity migration
 
@@ -188,6 +189,14 @@ The primary-mark decision changed after comparative visual exploration for the F
 Compatibility and migration effects are intentionally small: the graphite/blue/violet visual foundation in D-084 is unchanged; existing lynx artwork remains valid as mascot or secondary branding; future primary-brand assets should use the `F`; no system architecture, package contract, desktop behavior, or active Phase 2 validation gate changes because of this identity decision.
 
 The approved Felunyx website design in `mafuzyk/Playground` is the first consumer of D-107. Exact vector geometry, clear-space rules, monochrome variants, and export assets remain implementation details of the brand system rather than new product decisions.
+
+### D-108 compatibility boundary
+
+D-108 does not prohibit customization and does not turn unofficial environments into unsupported software in the generic Arch sense. It defines the boundary of what the Felunyx project itself validates and promises to integrate coherently.
+
+Compatibility is not the same as validation. An unofficial desktop environment or window manager functioning on Felunyx does not imply that Felunyx has tested or supports its integration paths, configuration, recovery behavior, shared-service adapters, or profile-specific UX.
+
+D-010, D-011, D-012 and D-014 remain unchanged: installation selects one graphical profile by default, KDE is the first reference target, XFCE and Hyprland are later official profiles, and official profiles share the Felunyx platform concepts.
 
 ## Changing a decision
 
